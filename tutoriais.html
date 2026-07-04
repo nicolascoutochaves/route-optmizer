@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vídeos Tutoriais</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#0052B3">
+    <link rel="apple-touch-icon" href="./icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            /* Tema escuro (padrão) */
+            --bg: #0F1115;
+            --surface: #181B20;
+            --ink: #F3F5F7;
+            --ink-soft: #B4BDC6;
+            --line: #2A3038;
+            --accent: #3FA88D;
+            --radius: 12px;
+        }
+
+        /* Tema claro */
+        body.light {
+            --bg: #F5F6F3;
+            --surface: #FFFFFF;
+            --ink: #1E2A2E;
+            --ink-soft: #55666B;
+            --line: #DDE3DF;
+            --accent: #1F6F5C;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            font-family: 'Inter', sans-serif;
+            color: var(--ink);
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+
+            padding: 16px 24px;
+
+            background: rgba(15, 17, 21, .90);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+
+            border-bottom: 1px solid var(--line);
+        }
+
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+
+            padding: 8px 14px;
+
+            border: 1px solid var(--line);
+            border-radius: 999px;
+
+            background: var(--surface);
+            color: var(--ink);
+
+            cursor: pointer;
+            font: 500 .9rem 'Inter', sans-serif;
+
+            transition: .2s;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+
+        .brand {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+        }
+
+        .hero {
+            max-width: 920px;
+            margin: auto;
+            padding: 50px 24px 20px;
+        }
+
+        .hero h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2rem, 4vw, 3rem);
+            margin-bottom: 10px;
+        }
+
+        .hero p {
+            color: var(--ink-soft);
+        }
+
+        .container {
+            max-width: 920px;
+            margin: auto;
+            padding: 0 24px 60px;
+        }
+
+        .video-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 32px;
+        }
+
+        .video-card h2 {
+            font-family: 'Space Grotesk', sans-serif;
+            margin-top: 0;
+            margin-bottom: 14px;
+        }
+
+        .video-card p {
+            color: var(--ink-soft);
+        }
+
+        iframe {
+            width: 100%;
+            aspect-ratio: 16/9;
+            border: none;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="topbar">
+        <div class="brand">GUIA | Otimizador de Roteiros</div>
+
+        <button class="theme-toggle" id="theme-toggle">
+            🌙 Modo escuro
+        </button>
+    </div>
+
+    <section class="hero">
+        <h1>Vídeos Tutoriais</h1>
+        <p>Substitua os IDs dos vídeos do YouTube pelos seus próprios vídeos.</p>
+    </section>
+
+    <div class="container">
+
+        <div class="video-card">
+            <h2>▶ Tutorial 01 - Como importar roteiros</h2>
+            <iframe src="https://www.youtube.com/embed/VIDEO1" allowfullscreen></iframe>
+            <p>Descrição do tutorial.</p>
+        </div>
+
+        <div class="video-card">
+            <h2>▶ Tutorial 02 - Vinculando JSON</h2>
+            <iframe src="https://www.youtube.com/embed/VIDEO2" allowfullscreen></iframe>
+            <p>Descrição do tutorial.</p>
+        </div>
+
+        <div class="video-card">
+            <h2>▶ Tutorial 03 - Editando pontos</h2>
+            <iframe src="https://www.youtube.com/embed/VIDEO3" allowfullscreen></iframe>
+            <p>Descrição do tutorial.</p>
+        </div>
+
+        <div class="video-card">
+            <h2>▶ Tutorial 04 - Otimizando rotas</h2>
+            <iframe src="https://www.youtube.com/embed/VIDEO4" allowfullscreen></iframe>
+            <p>Descrição do tutorial.</p>
+        </div>
+
+        <div class="video-card">
+            <h2>▶ Tutorial 05 - Exportação e compartilhamento</h2>
+            <iframe src="https://www.youtube.com/embed/VIDEO5" allowfullscreen></iframe>
+            <p>Descrição do tutorial.</p>
+        </div>
+
+    </div>
+    <script>
+        const themeBtn = document.getElementById("theme-toggle");
+
+        // Carrega preferência salva
+        if (localStorage.getItem("theme") === "light") {
+            document.body.classList.add("light");
+        }
+
+        function updateThemeButton() {
+
+            const light = document.body.classList.contains("light");
+
+            themeBtn.textContent = light
+                ? "☀️ Modo claro"
+                : "🌙 Modo escuro";
+
+            localStorage.setItem("theme", light ? "light" : "dark");
+
+            // Ajusta a transparência da barra
+            document.querySelector(".topbar").style.background = light
+                ? "rgba(245,246,243,.92)"
+                : "rgba(15,17,21,.90)";
+        }
+
+        updateThemeButton();
+
+        themeBtn.addEventListener("click", () => {
+            document.body.classList.toggle("light");
+            updateThemeButton();
+        });
+
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("./sw.js").catch((err) => {
+                    console.warn("Falha ao registrar service worker:", err);
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>

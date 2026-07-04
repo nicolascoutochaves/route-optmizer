@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guia Rápido — Otimizador de Roteiros</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="../manifest.webmanifest">
+  <meta name="theme-color" content="#0052B3">
+  <link rel="apple-touch-icon" href="../icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0F1115;
+      --surface: #181B20;
+      --ink: #F3F5F7;
+      --ink-soft: #B4BDC6;
+      --ink-faint: #7D8792;
+      --line: #2A3038;
+
+      --accent: #3FA88D;
+      --accent-soft: #1A2A26;
+      --accent-dark: #2C7D69;
+
+      --warn: #D18A4A;
+      --warn-soft: #3B2A1E;
+
+      --radius: 10px;
+
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      --display: 'Space Grotesk', ui-sans-serif, sans-serif;
+      --body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    }
+
+    /* Tema claro */
+    body.light {
+      --bg: #F5F6F3;
+      --surface: #FFFFFF;
+      --ink: #1E2A2E;
+      --ink-soft: #55666B;
+      --ink-faint: #8B9A9E;
+      --line: #DDE3DF;
+
+      --accent: #1F6F5C;
+      --accent-soft: #E4EFEC;
+      --accent-dark: #153F35;
+
+      --warn: #9C5B2E;
+      --warn-soft: #F3E7DD;
+    }
+
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--ink);
+      font: 500 .82rem var(--body);
+      cursor: pointer;
+      transition: .2s;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    /* ================= TOPBAR ================= */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+
+      padding: 14px 28px;
+
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      padding: 2px 6px;
+    }
+
+    .brand-title {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 1.05rem;
+    }
+
+    .topnav {
+      display: flex;
+      gap: 18px;
+      font-size: 0.83rem;
+      color: var(--ink-soft);
+    }
+
+    .topnav a {
+      text-decoration: none;
+    }
+
+    .topnav a:hover {
+      color: var(--accent);
+    }
+
+    .video-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--ink);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .video-btn .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ink);
+      display: inline-block;
+    }
+
+    /* ================= HERO ================= */
+    .hero {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 56px 28px 8px;
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(1.7rem, 3.6vw, 2.35rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0 0 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .lede {
+      font-size: 1.02rem;
+      color: var(--ink-soft);
+      max-width: 62ch;
+      margin: 0;
+    }
+
+    /* ================= STEPPER (elemento de assinatura) ================= */
+    .stepper-wrap {
+      max-width: 920px;
+      margin: 44px auto 8px;
+      padding: 0 28px;
+    }
+
+    .stepper {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+    }
+
+    .stepper::before {
+      content: "";
+      position: absolute;
+      top: 15px;
+      left: 10%;
+      right: 10%;
+      height: 0;
+      border-top: 2px dashed var(--line);
+      z-index: 0;
+    }
+
+    .step {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0 8px;
+    }
+
+    .step-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      color: var(--accent-dark);
+      font-family: var(--mono);
+      font-weight: 500;
+      font-size: 0.78rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    .step-title {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 0.86rem;
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      font-size: 0.76rem;
+      color: var(--ink-soft);
+      line-height: 1.35;
+    }
+
+    @media (max-width:720px) {
+      .stepper {
+        grid-template-columns: repeat(2, 1fr);
+        row-gap: 28px;
+      }
+
+      .stepper::before {
+        display: none;
+      }
+    }
+
+    /* ================= SECTIONS / CARDS ================= */
+    .content {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 56px 28px 40px;
+    }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin: 0 0 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    @media (max-width:720px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 20px 20px 18px;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .card-num {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 5px;
+      padding: 2px 6px;
+      flex: 0 0 auto;
+    }
+
+    .card h3 {
+      font-family: var(--display);
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 0.87rem;
+      color: var(--ink-soft);
+    }
+
+    .card ul li {
+      margin-bottom: 6px;
+    }
+
+    .card ul li:last-child {
+      margin-bottom: 0;
+    }
+
+    .card p.card-note {
+      font-size: 0.87rem;
+      color: var(--ink-soft);
+      margin: 0 0 10px;
+    }
+
+    kbd {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      border-radius: 4px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
+
+    /* ================= TROUBLESHOOTING ================= */
+    .trouble {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .trouble-row {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 18px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .trouble-row:last-child {
+      border-bottom: none;
+    }
+
+    @media (max-width:640px) {
+      .trouble-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+    }
+
+    .trouble-flag {
+      font-size: 0.87rem;
+      font-weight: 600;
+      color: var(--warn);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .trouble-flag .bar {
+      width: 3px;
+      align-self: stretch;
+      background: var(--warn);
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+
+    .trouble-fix {
+      font-size: 0.87rem;
+      color: var(--ink-soft);
+    }
+
+    /* ================= FOOTER ================= */
+    footer {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 24px 28px 60px;
+      font-size: 0.8rem;
+      color: var(--ink-faint);
+      border-top: 1px solid var(--line);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark">GUIA</span>
+      <span class="brand-title">Otimizador de Roteiros</span>
+    </div>
+    <nav class="topnav">
+      <a href="#fluxo">Fluxo</a>
+      <a href="#uso">Como usar</a>
+      <a href="#problemas">Problemas</a>
+    </nav>
+    <!-- TODO: quando o vídeo estiver pronto, trocar href="#" pelo link real e remover a classe/atributos de "desabilitado" -->
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button class="theme-toggle" id="themeToggle">
+        🌙 Modo escuro
+      </button>
+
+      <a class="video-btn" href="tutoriais.html">
+        <span class="dot"></span> ▶ Vídeos tutoriais
+      </a>
+    </div>
+  </div>
+
+  <section class="hero">
+    <p class="eyebrow">Manual de consulta rápida</p>
+    <h1>Como usar o Otimizador de Roteiros</h1>
+    <p class="lede">
+      O programa lê seus arquivos KML, geocodifica os endereços de cada parada e calcula a rota mais curta
+      partindo e retornando sempre à base fixa. Este guia resume cada etapa — sem enrolação — para consulta
+      enquanto você trabalha.
+    </p>
+  </section>
+
+  <div class="stepper-wrap" id="fluxo">
+    <div class="stepper">
+      <div class="step">
+        <span class="step-dot">01</span>
+        <span class="step-title">Carregar</span>
+        <span class="step-desc">Importe os arquivos .kml</span>
+      </div>
+      <div class="step">
+        <span class="step-dot">02</span>
+        <span class="step-title">Selecionar</span>
+        <span class="step-desc">Escolha um roteiro na lista</span>
+      </div>
+      <div class="step">
+        <span class="step-dot">03</span>
+        <span class="step-title">Editar</span>
+        <span class="step-desc">Ajuste pontos, se precisar</span>
+      </div>
+      <div class="step">
+        <span class="step-dot">04</span>
+        <span class="step-title">Gerar</span>
+        <span class="step-desc">Link direto ou rota otimizada</span>
+      </div>
+      <div class="step">
+        <span class="step-dot">05</span>
+        <span class="step-title">Compartilhar</span>
+        <span class="step-desc">Maps, QR Code ou KML</span>
+      </div>
+    </div>
+  </div>
+
+  <main class="content" id="uso">
+
+    <p class="section-label">Referência rápida</p>
+
+    <div class="grid">
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">01</span>
+          <h3>Importar roteiros</h3>
+        </div>
+        <ul>
+          <li>Arraste um ou mais arquivos <kbd>.kml</kbd> exportados do Google Maps até a área de upload.</li>
+          <li>Vários arquivos podem ser carregados de uma vez.</li>
+          <li>Os dados ficam salvos automaticamente no navegador após o carregamento.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">02</span>
+          <h3>Vincular um arquivo JSON</h3>
+        </div>
+        <ul>
+          <li><kbd>🔗 Importar json</kbd> liga o programa a um arquivo no seu computador.</li>
+          <li><kbd>🔄 Recarregar</kbd> busca as alterações mais recentes desse arquivo.</li>
+          <li><kbd>🔌 Desvincular</kbd> apenas desliga a ligação — o arquivo não é apagado.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">03</span>
+          <h3>Selecionar um roteiro</h3>
+        </div>
+        <ul>
+          <li>Clique em um cartão na tela inicial para abrir a lista de pontos.</li>
+          <li>Clique em qualquer ponto da lista para corrigir endereço ou coordenada manualmente.</li>
+          <li>Arraste as linhas da lista para reordenar as paradas na mão.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">04</span>
+          <h3>Editar pontos em detalhe</h3>
+        </div>
+        <ul>
+          <li>O botão <kbd>✏️ Editar</kbd> abre um formulário por ponto: nome, endereço, latitude e longitude.</li>
+          <li><kbd>➕ Adicionar ponto</kbd> cria uma parada nova com coordenadas digitadas na mão.</li>
+          <li><kbd>💾 Salvar alterações</kbd> grava no roteiro e, se houver JSON vinculado, no próprio arquivo.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">05</span>
+          <h3>Gerar link × Otimizar</h3>
+        </div>
+        <ul>
+          <li><kbd>🔗 Gerar Link do Maps</kbd> monta o trajeto na ordem atual da lista.</li>
+          <li><kbd>⚡ Geocodificar + Otimizar</kbd> além de geocodificar, reordena tudo pela rota mais curta.</li>
+          <li>Use "Gerar Link" quando a ordem das paradas já importa para você.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">06</span>
+          <h3>Roteiro personalizado</h3>
+        </div>
+        <ul>
+          <li>O cartão <kbd>✏️ Personalizar</kbd> monta uma rota escolhendo pontos de vários roteiros já carregados.
+          </li>
+          <li>Marque os pontos desejados e organize a ordem antes de gerar o link.</li>
+          <li>Dá para salvar esse roteiro personalizado para reaproveitar depois.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">07</span>
+          <h3>Compartilhar a rota</h3>
+        </div>
+        <ul>
+          <li><kbd>🗺️ Google Maps</kbd> abre o trajeto calculado direto no navegador.</li>
+          <li><kbd>📋 Copiar link</kbd> ou o QR Code exibido facilitam enviar para o celular.</li>
+          <li><kbd>🔄 Gerar link</kbd> na tela de resultado atualiza o link após reordenar pontos.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-num">08</span>
+          <h3>Exportar e fazer backup</h3>
+        </div>
+        <ul>
+          <li><kbd>⬇️ Baixar KML</kbd> salva a rota otimizada como um novo arquivo KML.</li>
+          <li><kbd>💾 Exportar JSON</kbd> baixa uma cópia de segurança de todos os roteiros carregados.</li>
+          <li>Guarde essa cópia de vez em quando — ela substitui o cache do navegador se algo for perdido.</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <p class="section-label" id="problemas">Problemas comuns</p>
+
+    <div class="trouble">
+      <div class="trouble-row">
+        <div class="trouble-flag"><span class="bar"></span>Ponto marcado <kbd>✕ Corrigir</kbd></div>
+        <div class="trouble-fix">O endereço não foi encontrado. Clique no ponto e digite um endereço mais específico
+          (rua, número e bairro).</div>
+      </div>
+      <div class="trouble-row">
+        <div class="trouble-flag"><span class="bar"></span>"Permissão negada"</div>
+        <div class="trouble-fix">Conceda o acesso quando o navegador pedir, ao clicar em <kbd>🔄 Recarregar</kbd> no
+          arquivo vinculado.</div>
+      </div>
+      <div class="trouble-row">
+        <div class="trouble-flag"><span class="bar"></span>Nada aparece após carregar o KML</div>
+        <div class="trouble-fix">Confirme que o arquivo tem pastas com pontos dentro — é a estrutura padrão de uma
+          exportação do Google Maps.</div>
+      </div>
+      <div class="trouble-row">
+        <div class="trouble-flag"><span class="bar"></span>Coordenada errada mesmo após corrigir</div>
+        <div class="trouble-fix">Use o botão <kbd>✏️ Editar</kbd> e digite a latitude/longitude corretas na mão, em vez
+          de depender da geocodificação automática.</div>
+      </div>
+      <div class="trouble-row">
+        <div class="trouble-flag"><span class="bar"></span>Roteiro sumiu depois de limpar o navegador</div>
+        <div class="trouble-fix">Restaure a partir de um backup com <kbd>📥 Importar roteiros.json</kbd>, ou vincule
+          sempre um arquivo JSON externo.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    Guia de referência do Otimizador de Roteiros. O vídeo tutorial será adicionado ao botão no topo assim que estiver
+    pronto.
+  </footer>
+  <script>
+    const btn = document.getElementById("themeToggle");
+
+    function updateButton() {
+      if (document.body.classList.contains("light")) {
+        btn.textContent = "☀️ Modo claro";
+      } else {
+        btn.textContent = "🌙 Modo escuro";
+      }
+    }
+
+    updateButton();
+
+    btn.addEventListener("click", () => {
+      document.body.classList.toggle("light");
+      updateButton();
+    });
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("../sw.js").catch((err) => {
+          console.warn("Falha ao registrar service worker:", err);
+        });
+      });
+    }
+  </script>
+</body>
+
+</html>
