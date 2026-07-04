@@ -1,7 +1,7 @@
 // ============================================================================
 // CONFIGURAÇÃO
 // ============================================================================
-const MAPBOX_TOKEN = 'pk.eyJ1Ijoibmljb2xhc2NvdXRvY2hhdmVzIiwiYSI6ImNtb3hhNW8zdzBlb28yeG9rbWd2aGRxaTcifQ.WRfhIdN6_6Ds_5zLnO_ihw';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoibW9uaXRvcmFtZW50b2RtYWUiLCJhIjoiY21yNm9iaDQyMTJjaTM0cHhkbXZtNTVpNiJ9.iu0p3UzxXbUB-4rjPnQKpQ';
 const START_END = 'Rua Barão do Guaíba, 781, Porto Alegre, RS, Brasil';
 const STORAGE_KEY = 'roteiros_kml_data';
 const CUSTOM_LS_KEY = 'roteiros_custom_saved';
