@@ -633,6 +633,7 @@ const updateRow = i => {
     const from = parseInt(e.dataTransfer.getData('text/plain')), to = parseInt(row.dataset.index);
     if (from === to) return;
     [points[from], points[to]] = [points[to], points[from]];
+    syncPointsToRoute(); //Salva os pontos no json na ordem do drag and drop;
     renderList();
     if (geocodeDone && startCoord) {
       const valid = points.filter(p => p.status === 'ok');
