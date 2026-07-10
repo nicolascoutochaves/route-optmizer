@@ -790,6 +790,21 @@ const buildEditRow = (p, idx) => {
     editDraftPoints.splice(idx, 1);
     renderEditRows();
   };
+
+  // Permite colar "lat, lng" (formato copiado do Google Maps) diretamente no campo
+  // Latitude, preenchendo automaticamente os dois campos (lat e lng).
+  const latInput = row.querySelector('.edit-lat');
+  const lngInput = row.querySelector('.edit-lng');
+  latInput.addEventListener('paste', (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    const m = text.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (m) {
+      e.preventDefault();
+      latInput.value = m[1];
+      lngInput.value = m[2];
+    }
+  });
+
   return row;
 };
 
