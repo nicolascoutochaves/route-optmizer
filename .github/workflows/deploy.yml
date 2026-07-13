@@ -7,7 +7,7 @@ name: Deploy
 #   dev    -> https://<usuario>.github.io/<repo>/dev/      (ambiente dev)
 on:
   push:
-    branches: [dev, beta, master]
+    branches: [dev/code-review, beta, master]
 
 # Necessário para o job de deploy poder empurrar (push) para a branch gh-pages.
 permissions:
