@@ -5,9 +5,9 @@ name: Tests
 # branches como rede de segurança (ex: merge feito localmente sem PR).
 on:
   pull_request:
-    branches: [dev, beta, master]
+    branches: [dev/code-review, beta, master]
   push:
-    branches: [dev, beta, master]
+    branches: [dev/code-review, beta, master]
 
 jobs:
   test:
