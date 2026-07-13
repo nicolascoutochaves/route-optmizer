@@ -430,6 +430,25 @@ dropZone.addEventListener('drop', e => {
 
 document.getElementById('fi').onchange = e => { const files = Array.from(e.target.files); if (files.length) processKMLFiles(files); };
 
+/**
+ * Mescla os roteiros recém-lidos de um arquivo em `routes`, sem sobrescrever
+ * silenciosamente um roteiro já existente com o mesmo nome (vindo de outro
+ * arquivo). Em caso de colisão, aplica o mesmo padrão de desambiguação usado
+ * dentro de um único arquivo em parseKMLText(): sufixo " (nome-do-arquivo)".
+ */
+const mergeRoutesFromFile = (target, newRoutes, fileName) => {
+  const base = fileName.replace(/\.kml$/i, '');
+  Object.keys(newRoutes).forEach(key => {
+    let finalKey = key;
+    if (target[finalKey]) {
+      finalKey = `${key} (${base})`;
+      let n = 2;
+      while (target[finalKey]) { finalKey = `${key} (${base} ${n})`; n++; }
+    }
+    target[finalKey] = newRoutes[key];
+  });
+};
+
 const processKMLFiles = files => {
   const msg = document.getElementById('fi-msg');
   msg.textContent = `⏳ Lendo ${files.length} arquivo(s)…`;
@@ -440,7 +459,7 @@ const processKMLFiles = files => {
     r.onload = ev => {
       try {
         const nr = parseKMLText(ev.target.result, file.name);
-        Object.assign(routes, nr); totalRoutes += Object.keys(nr).length; loadedFileNames.push(file.name);
+        mergeRoutesFromFile(routes, nr, file.name); totalRoutes += Object.keys(nr).length; loadedFileNames.push(file.name);
       } catch (ex) { errors++; }
       if (--pending === 0) {
         if (!Object.keys(routes).length) { msg.textContent = errors ? `⚠️ Erro em ${errors} arquivo(s).` : 'Nenhum roteiro encontrado.'; return; }
@@ -1539,3 +1558,64 @@ document.getElementById('panel-btn-save').onclick = function () {
   currentRouteKey = CUSTOM_ROUTE_PREFIX + name;
   refreshDeleteRouteButton();
 };
+
+
+// ============================================================================
+// TEST HOOKS
+// Bloco inofensivo para produção: apenas expõe, em `window.__testHooks`, as
+// funções e o estado interno do módulo para que os testes automatizados
+// consigam chamá-los diretamente (o script não usa `export`/módulos ES).
+// Nada aqui altera comportamento — é só uma "porta dos fundos" de leitura/escrita
+// para o ambiente de testes.
+// ============================================================================
+if (typeof window !== 'undefined') {
+  window.__testHooks = {
+    // utils
+    escXML, escURL, normalizeText, titleCasePt, formatAddr, getToken,
+    // geocoding
+    geocodeMapbox, pickBestFeature, ensureStartCoord,
+    // tsp / distância
+    haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
+    // persistência json
+    saveToStorage, loadFromStorage, exportJSON, importFromJSON, applyLoadedRoutes,
+    // kml
+    parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
+    processKMLFiles, mergeRoutesFromFile,
+    // links / qr
+    buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
+    // roteiro (grid principal)
+    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow, openFix,
+    // edição de pontos
+    openEditPanel, closeEditPanel, renderEditRows, collectEditRowsIntoDraft, buildEditRow,
+    // painel personalizar (custom)
+    openCustomPanel, closeCustomPanel, togglePointSelection, selectAllPoints, unselectAllPoints,
+    isPointSelected, geocodeCustomSelectionPoints, finishPanelLink, renderPanelPoints,
+    renderPanelSelectedList, renderPanelRouteTabs,
+    // roteiros personalizados salvos (CRUD)
+    isCustomRouteKey, getCustomRouteName, loadCustomSavedRoutes, saveCustomRoutesToStorage,
+    loadCustomSavedRouteOptions, refreshDeleteRouteButton,
+    // constantes
+    CUSTOM_ROUTE_PREFIX, STORAGE_KEY, CUSTOM_LS_KEY, START_END,
+    // acesso ao estado interno (getters/setters) — necessário pois são `let` no escopo do módulo
+    state: {
+      get routes() { return routes; }, set routes(v) { routes = v; },
+      get points() { return points; }, set points(v) { points = v; },
+      get startCoord() { return startCoord; }, set startCoord(v) { startCoord = v; },
+      get currentRoute() { return currentRoute; }, set currentRoute(v) { currentRoute = v; },
+      get currentRouteKey() { return currentRouteKey; }, set currentRouteKey(v) { currentRouteKey = v; },
+      get customSelection() { return customSelection; }, set customSelection(v) { customSelection = v; },
+      get panelCurrentRoute() { return panelCurrentRoute; }, set panelCurrentRoute(v) { panelCurrentRoute = v; },
+      get editDraftPoints() { return editDraftPoints; }, set editDraftPoints(v) { editDraftPoints = v; },
+      get savedCustomRoutes() { return savedCustomRoutes; }, set savedCustomRoutes(v) { savedCustomRoutes = v; },
+      get exportSelection() { return exportSelection; }, set exportSelection(v) { exportSelection = v; },
+      get geocodeDone() { return geocodeDone; }, set geocodeDone(v) { geocodeDone = v; },
+      get isOptimized() { return isOptimized; }, set isOptimized(v) { isOptimized = v; },
+      get optimizedStops() { return optimizedStops; }, set optimizedStops(v) { optimizedStops = v; },
+      get links() { return links; }, set links(v) { links = v; },
+      get loadedFileNames() { return loadedFileNames; }, set loadedFileNames(v) { loadedFileNames = v; },
+      get customCurrentLink() { return customCurrentLink; }, set customCurrentLink(v) { customCurrentLink = v; },
+      get customOptimizedStops() { return customOptimizedStops; }, set customOptimizedStops(v) { customOptimizedStops = v; },
+    }
+  };
+  window.dispatchEvent(new Event('__scriptReady'));
+}
