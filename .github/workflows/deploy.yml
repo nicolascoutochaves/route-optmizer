@@ -1,0 +1,74 @@
+name: Deploy
+
+# Dispara a cada push (= merge) em dev, beta ou master. Cada branch publica
+# num "subsite" diferente da MESMA página do GitHub Pages:
+#   master -> https://<usuario>.github.io/<repo>/          (produção)
+#   beta   -> https://<usuario>.github.io/<repo>/beta/     (ambiente beta)
+#   dev    -> https://<usuario>.github.io/<repo>/dev/      (ambiente dev)
+on:
+  push:
+    branches: [dev, beta, master]
+
+# Necessário para o job de deploy poder empurrar (push) para a branch gh-pages.
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Rodar suíte de testes (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Publicar no GitHub Pages
+    needs: test # só roda se os testes passarem
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Definir subpasta de destino conforme a branch
+        id: vars
+        run: |
+          if [ "${{ github.ref_name }}" = "master" ]; then
+            echo "dest=." >> "$GITHUB_OUTPUT"
+          else
+            echo "dest=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Montar pasta pública (exclui tests/, .github/, etc)
+        run: |
+          mkdir -p public
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='node_modules' \
+            --exclude='public' \
+            --exclude='.gitignore' \
+            --exclude='README*' \
+            --exclude='LEIAME*' \
+            --exclude='LICENSE*' \
+            ./ ./public/
+
+      - name: Deploy no GitHub Pages (branch gh-pages)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
+          destination_dir: ${{ steps.vars.outputs.dest }}
+          # IMPORTANTE: sem isso, cada deploy apagaria as outras subpastas
+          # (dev/beta/produção convivem na mesma branch gh-pages).
+          keep_files: true
