@@ -1,7 +1,6 @@
 // ============================================================================
 // CONFIGURAÇÃO
 // ============================================================================
-const MAPBOX_TOKEN = 'pk.eyJ1IjoibW9uaXRvcmFtZW50b2RtYWUiLCJhIjoiY21yNm9wOXBlMHhqdTM0cHZodmExZjFhbyJ9.NtpSMyX-ljLGonRKkP9Beg';
 const START_END = 'Rua Barão do Guaíba, 781, Porto Alegre, RS, Brasil';
 const STORAGE_KEY = 'roteiros_kml_data';
 const CUSTOM_LS_KEY = 'roteiros_custom_saved';
@@ -37,11 +36,8 @@ let editDraftPoints = [];
 // ============================================================================
 // UTILITIES
 // ============================================================================
-const getToken = () => (MAPBOX_TOKEN || '').trim();
 const escXML = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const escURL = s => encodeURIComponent(s || '');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const normalizeText = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const titleCasePt = s => (s || '').toLowerCase().replace(/(^|[\s-])([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
 
 const formatAddr = raw => {
@@ -234,44 +230,38 @@ document.getElementById('btn-fsa-unlink').onclick = async () => {
 };
 
 // ============================================================================
-// MAPBOX GEOCODING
+// GEOCODING (via serverless function no Vercel — a chave Mapbox fica no servidor)
 // ============================================================================
 const geocodeMapbox = async query => {
-  const token = getToken();
-  if (!token || token.includes('SEU_TOKEN')) throw new Error('Insira a chave Mapbox no HTML');
-  const q0 = (query || '').replace(/\s+/g, ' ').trim();
+  const q0 = (query || '').trim();
   if (!q0) return null;
-  const variants = [...new Set([q0, formatAddr(q0), titleCasePt(q0.replace(/,/g, ' ')), titleCasePt(q0)].filter(Boolean))];
-  for (const variant of variants) {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${escURL(variant)}.json?access_token=${escURL(token)}&country=br&language=pt&limit=1&types=address&autocomplete=false&proximity=-51.2177,-30.0346`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Mapbox HTTP ${res.status}`);
-    const data = await res.json();
-    const best = pickBestFeature(data.features, variant);
-    if (best?.center?.length >= 2) return { lng: best.center[0], lat: best.center[1], label: best.place_name || variant };
-  }
-  return null;
-};
 
-const pickBestFeature = (features, query) => {
-  if (!features?.length) return null;
-  const qn = normalizeText(query);
-  const street = qn.split(',')[0].trim();
-  const numM = qn.match(/(?:,\s*|\s)(\d+[a-z]?)(?:\b|$)/i);
-  const num = numM ? numM[1] : '';
-  let best = null, bestScore = -999;
-  features.forEach(f => {
-    const label = normalizeText(f.place_name || '');
-    let score = (f.relevance || 0) * 10;
-    if (num && label.includes(num)) score += 8;
-    if (num && f.properties?.address === num) score += 15;
-    if (label.includes('porto alegre')) score += 3;
-    if (label.includes('rs')) score += 1;
-    if (label.includes('cidade baixa') && qn.includes('cidade baixa')) score += 4;
-    if (street && label.includes(street.split(' ')[0])) score += 1;
-    if (score > bestScore) { bestScore = score; best = f; }
-  });
-  return best;
+  // Chama a API local do Vercel passando o endereço como parâmetro.
+  // A chave do Mapbox nunca é exposta no client — fica configurada como
+  // variável de ambiente na serverless function.
+  const url = `/api/request?query=${encodeURIComponent(q0)}`;
+
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error('Não foi possível contatar o servidor de geocodificação. Verifique sua conexão.');
+  }
+
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    if (res.status === 401 || res.status === 403) throw new Error('Chave de API inválida ou não configurada no servidor (Vercel).');
+    if (res.status === 429) throw new Error('Limite de requisições de geocodificação excedido. Tente novamente em instantes.');
+    if (res.status >= 500) throw new Error('Erro no servidor de geocodificação. Tente novamente em instantes.');
+    throw new Error(`Erro no servidor: ${res.status}`);
+  }
+
+  try {
+    // Retorna diretamente o objeto { lng, lat, label } processado pelo servidor
+    return await res.json();
+  } catch (e) {
+    throw new Error('Resposta inválida do servidor de geocodificação.');
+  }
 };
 
 const ensureStartCoord = async () => {
@@ -738,6 +728,7 @@ document.getElementById('btn-fix-geo').onclick = async function () {
   } catch (e) {
     res.style.color = 'var(--color-error)';
     res.textContent = 'Erro: ' + e.message;
+    showToast(e.message, 'error');
   }
   this.disabled = false;
 };
@@ -1064,7 +1055,7 @@ const geocodeAllPoints = async () => {
   const pfill = document.getElementById('pfill'), ptxt = document.getElementById('ptxt');
   document.getElementById('pbar').classList.remove('hidden');
   ptxt.textContent = 'Geocodificando ponto de partida/chegada…';
-  try { await ensureStartCoord(); } catch (e) { ptxt.textContent = 'Erro: ' + e.message; return false; }
+  try { await ensureStartCoord(); } catch (e) { ptxt.textContent = 'Erro: ' + e.message; showToast(e.message, 'error'); return false; }
   if (!startCoord) { ptxt.textContent = 'Não foi possível geocodificar o endereço base.'; return false; }
 
   const total = points.length;
@@ -1158,7 +1149,6 @@ const geocodeThenExport = async (routeNames, filename, btn) => {
 
 document.getElementById('btn-gen-link').onclick = async function () {
   this.disabled = true;
-  if (!getToken() || getToken().includes('SEU_TOKEN')) { showToast('Insira a chave Mapbox no HTML', 'error'); this.disabled = false; return; }
 
   if (!geocodeDone && !(await geocodeAllPoints())) { this.disabled = false; return; }
 
@@ -1183,7 +1173,6 @@ document.getElementById('btn-gen-link').onclick = async function () {
 
 document.getElementById('btn-run').onclick = async function () {
   this.disabled = true; isOptimized = false;
-  if (!getToken() || getToken().includes('SEU_TOKEN')) { document.getElementById('ptxt').textContent = 'Insira a chave Mapbox (pk.) no HTML primeiro.'; this.disabled = false; return; }
 
   if (!(await geocodeAllPoints())) { this.disabled = false; return; }
   isOptimized = true;
@@ -1193,6 +1182,7 @@ document.getElementById('btn-run').onclick = async function () {
     showToast('✓ Otimização concluída', 'success');
   } catch (e) {
     document.getElementById('ptxt').textContent = 'Erro: ' + e.message;
+    showToast(e.message, 'error');
   }
   this.disabled = false;
 };
@@ -1379,7 +1369,7 @@ const setPanelStatus = (msg, type) => {
 // Agora a base é sempre geocodificada primeiro.
 const geocodeCustomSelectionPoints = async () => {
   const status = document.getElementById('panel-status');
-  try { await ensureStartCoord(); } catch (e) { setPanelStatus('Erro: ' + e.message, 'error'); return false; }
+  try { await ensureStartCoord(); } catch (e) { setPanelStatus(e.message, 'error'); return false; }
   if (!startCoord) { setPanelStatus('Não foi possível geocodificar o endereço base.', 'error'); return false; }
 
   const needsGeocode = customSelection.filter(s => s.point.isGeocodable !== false && (s.point.lat === null || s.point.lng === null));
@@ -1441,7 +1431,7 @@ document.getElementById('panel-btn-gen-link').onclick = async function () {
     await finishPanelLink(customOptimizedStops, `✓ Link gerado · ${valid.length} pontos na ordem selecionada`);
   } catch (err) {
     console.error(err);
-    setPanelStatus('Erro ao gerar link.', 'error');
+    setPanelStatus(err.message || 'Erro ao gerar link.', 'error');
   }
   this.disabled = false;
 };
@@ -1571,9 +1561,9 @@ document.getElementById('panel-btn-save').onclick = function () {
 if (typeof window !== 'undefined') {
   window.__testHooks = {
     // utils
-    escXML, escURL, normalizeText, titleCasePt, formatAddr, getToken,
+    escXML, titleCasePt, formatAddr,
     // geocoding
-    geocodeMapbox, pickBestFeature, ensureStartCoord,
+    geocodeMapbox, ensureStartCoord,
     // tsp / distância
     haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
     // persistência json
