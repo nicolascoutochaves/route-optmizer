@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadApp, mockFetch, mapboxSuccessResponse, samplePoint } from './testUtils.js';
+import { loadApp, mockFetch, apiSuccessResponse, samplePoint } from './testUtils.js';
 
 function setupTwoRoutes(h) {
   h.state.routes = {
@@ -169,7 +169,7 @@ describe('Geração de link/otimização a partir da seleção personalizada', (
     h.togglePointSelection('NORTE', 0);
     mockFetch(async url => {
       if (url.includes('is.gd') || url.includes('tinyurl')) return { ok: true, text: async () => 'https://is.gd/custom1' };
-      return mapboxSuccessResponse({ lng: -51.21, lat: -30.03 }); // base
+      return apiSuccessResponse({ lng: -51.21, lat: -30.03, label: 'Base Mock' }); // /api/request (base)
     });
 
     const genBtn = document.getElementById('panel-btn-gen-link');

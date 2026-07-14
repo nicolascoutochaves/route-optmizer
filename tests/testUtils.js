@@ -31,32 +31,79 @@ export function mockFetch(impl) {
   return fn;
 }
 
-/** Resposta Mapbox de sucesso, com um único feature na coordenada dada. */
-export function mapboxSuccessResponse({ lng, lat, place_name = 'Endereço Mock, Porto Alegre - RS, Brasil', address = '', relevance = 1 }) {
+// ============================================================================
+// Mocks da resposta do endpoint serverless /api/request (client-side).
+// O client (script.js) não fala mais com o Mapbox diretamente — ele recebe
+// { lng, lat, label } já prontos, ou um status HTTP de erro. Estes helpers
+// simulam exatamente esse contrato.
+// ============================================================================
+
+/** Resposta de sucesso do /api/request: { lng, lat, label } já processado. */
+export function apiSuccessResponse({ lng, lat, label = 'Endereço Mock, Porto Alegre - RS, Brasil' }) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ lng, lat, label }),
+    text: async () => JSON.stringify({ lng, lat, label })
+  };
+}
+
+/** 404 do /api/request — nenhum local encontrado (geocodeMapbox trata como null). */
+export function apiNotFoundResponse() {
+  return {
+    ok: false,
+    status: 404,
+    json: async () => ({ error: 'Nenhum local encontrado' }),
+    text: async () => JSON.stringify({ error: 'Nenhum local encontrado' })
+  };
+}
+
+/** Qualquer outro status de erro do /api/request (401/403/429/5xx/etc). */
+export function apiErrorResponse(status = 500, error = 'Erro') {
+  return {
+    ok: false,
+    status,
+    json: async () => ({ error }),
+    text: async () => JSON.stringify({ error })
+  };
+}
+
+// ============================================================================
+// Mocks da resposta CRUA do Mapbox (usados pelos testes do handler serverless
+// em request.js, que é quem de fato conversa com a API do Mapbox agora).
+// ============================================================================
+
+/** Resposta Mapbox com um feature na coordenada dada (formato v5 geocoding). */
+export function mapboxFeatureResponse({ lng, lat, place_name = 'Endereço Mock, Porto Alegre - RS, Brasil', address = '', relevance = 1 }) {
   return {
     ok: true,
     status: 200,
     json: async () => ({
       features: [
-        {
-          place_name,
-          relevance,
-          center: [lng, lat],
-          properties: { address }
-        }
+        { place_name, relevance, center: [lng, lat], properties: { address } }
       ]
     }),
     text: async () => JSON.stringify({})
   };
 }
 
-/** Resposta Mapbox "não encontrado" (sem features). */
-export function mapboxEmptyResponse() {
+/** Resposta Mapbox sem resultados (features vazio, mas HTTP 200). */
+export function mapboxEmptyFeaturesResponse() {
   return {
     ok: true,
     status: 200,
     json: async () => ({ features: [] }),
-    text: async () => JSON.stringify({})
+    text: async () => JSON.stringify({ features: [] })
+  };
+}
+
+/** Resposta Mapbox com erro HTTP (ex: token inválido, rate limit). */
+export function mapboxHttpErrorResponse(status = 401) {
+  return {
+    ok: false,
+    status,
+    json: async () => ({}),
+    text: async () => ''
   };
 }
 
