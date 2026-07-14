@@ -1,0 +1,3 @@
+node_modules/
+fixture.html
+.tmp-script-no-token-*.js

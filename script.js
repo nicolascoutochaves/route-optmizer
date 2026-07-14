@@ -430,6 +430,25 @@ dropZone.addEventListener('drop', e => {
 
 document.getElementById('fi').onchange = e => { const files = Array.from(e.target.files); if (files.length) processKMLFiles(files); };
 
+/**
+ * Mescla os roteiros recém-lidos de um arquivo em `routes`, sem sobrescrever
+ * silenciosamente um roteiro já existente com o mesmo nome (vindo de outro
+ * arquivo). Em caso de colisão, aplica o mesmo padrão de desambiguação usado
+ * dentro de um único arquivo em parseKMLText(): sufixo " (nome-do-arquivo)".
+ */
+const mergeRoutesFromFile = (target, newRoutes, fileName) => {
+  const base = fileName.replace(/\.kml$/i, '');
+  Object.keys(newRoutes).forEach(key => {
+    let finalKey = key;
+    if (target[finalKey]) {
+      finalKey = `${key} (${base})`;
+      let n = 2;
+      while (target[finalKey]) { finalKey = `${key} (${base} ${n})`; n++; }
+    }
+    target[finalKey] = newRoutes[key];
+  });
+};
+
 const processKMLFiles = files => {
   const msg = document.getElementById('fi-msg');
   msg.textContent = `⏳ Lendo ${files.length} arquivo(s)…`;
@@ -440,7 +459,7 @@ const processKMLFiles = files => {
     r.onload = ev => {
       try {
         const nr = parseKMLText(ev.target.result, file.name);
-        Object.assign(routes, nr); totalRoutes += Object.keys(nr).length; loadedFileNames.push(file.name);
+        mergeRoutesFromFile(routes, nr, file.name); totalRoutes += Object.keys(nr).length; loadedFileNames.push(file.name);
       } catch (ex) { errors++; }
       if (--pending === 0) {
         if (!Object.keys(routes).length) { msg.textContent = errors ? `⚠️ Erro em ${errors} arquivo(s).` : 'Nenhum roteiro encontrado.'; return; }
@@ -626,14 +645,29 @@ const updateRow = i => {
   row.draggable = true; row.dataset.index = i;
   row.innerHTML = `<span class="drag-handle">☰</span><span class="row-name">${escXML(p.name)}</span><span class="row-address" title="${escXML(p.address)}">${escXML(ad)}</span><span class="row-coord">${coord}</span>${mkBadge(p)}`;
   row.ondragstart = e => { row.classList.add('dragging'); e.dataTransfer.setData('text/plain', i); };
-  row.ondragend = () => row.classList.remove('dragging');
-  row.ondragover = e => e.preventDefault();
+  row.ondragend = () => {
+    row.classList.remove('dragging');
+    document.querySelectorAll('#pts-list .row').forEach(r => r.classList.remove('drop-above', 'drop-below'));
+  };
+  row.ondragover = e => {
+    e.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const isAfter = (e.clientY - rect.top) > rect.height / 2;
+    row.classList.toggle('drop-below', isAfter);
+    row.classList.toggle('drop-above', !isAfter);
+  };
+  row.ondragleave = () => row.classList.remove('drop-above', 'drop-below');
   row.ondrop = e => {
     e.preventDefault();
-    const from = parseInt(e.dataTransfer.getData('text/plain')), to = parseInt(row.dataset.index);
+    const isAfter = row.classList.contains('drop-below');
+    row.classList.remove('drop-above', 'drop-below');
+    const from = parseInt(e.dataTransfer.getData('text/plain'));
+    const to = parseInt(row.dataset.index);
     if (from === to) return;
-    [points[from], points[to]] = [points[to], points[from]];
-    syncPointsToRoute(); //Salva os pontos no json na ordem do drag and drop;
+    const adjustedTo = from < to ? to - 1 : to;
+    const insertAt = isAfter ? adjustedTo + 1 : adjustedTo;
+    const moved = points.splice(from, 1)[0];
+    points.splice(insertAt, 0, moved);
     renderList();
     if (geocodeDone && startCoord) {
       const valid = points.filter(p => p.status === 'ok');
@@ -650,6 +684,7 @@ const renderList = () => {
     row.onclick = () => openFix(i);
     c.appendChild(row); updateRow(i);
   });
+  document.getElementById('btn-save-drag-order').classList.toggle('hidden', points.length === 0);
 };
 
 // ============================================================================
@@ -753,10 +788,10 @@ const buildEditRow = (p, idx) => {
         <input type="text" class="edit-address" value="${escXML(p.address || '')}" placeholder="Endereço completo">
       </label>
       <label>Latitude
-        <input type="number" step="0.000001" class="edit-lat" value="${latVal}" placeholder="-30.0346">
+        <input type="text" inputmode="decimal" class="edit-lat" value="${latVal}" placeholder="-30.0346">
       </label>
       <label>Longitude
-        <input type="number" step="0.000001" class="edit-lng" value="${lngVal}" placeholder="-51.2177">
+        <input type="text" inputmode="decimal" class="edit-lng" value="${lngVal}" placeholder="-51.2177">
       </label>
     </div>
     <div class="edit-row-controls">
@@ -771,6 +806,32 @@ const buildEditRow = (p, idx) => {
     editDraftPoints.splice(idx, 1);
     renderEditRows();
   };
+
+  // Permite colar "lat, lng" (formato copiado do Google Maps) diretamente no campo
+  // Latitude, preenchendo automaticamente os dois campos (lat e lng).
+  // Usa o evento 'input' (em vez de 'paste') para funcionar de forma confiável
+  // em qualquer navegador/dispositivo, inclusive celular.
+  const latInput = row.querySelector('.edit-lat');
+  const lngInput = row.querySelector('.edit-lng');
+  const lockInput = row.querySelector('.edit-lock');
+
+  latInput.addEventListener('input', () => {
+    const raw = latInput.value;
+    const parts = raw.split(',');
+    if (parts.length === 2) {
+      const latNum = parseFloat(parts[0].trim());
+      const lngNum = parseFloat(parts[1].trim());
+      if (!isNaN(latNum) && !isNaN(lngNum)) {
+        latInput.value = latNum;
+        lngInput.value = lngNum;
+      }
+    }
+    if (latInput.value.trim() !== '') lockInput.checked = true;
+  });
+  lngInput.addEventListener('input', () => {
+    if (lngInput.value.trim() !== '') lockInput.checked = true;
+  });
+
   return row;
 };
 
@@ -831,6 +892,29 @@ document.getElementById('btn-edit-save').onclick = async function () {
 };
 
 document.getElementById('btn-edit-close').onclick = closeEditPanel;
+
+// Salva no JSON a ordem atual dos pontos (arrastados manualmente na lista antes do TSP).
+document.getElementById('btn-save-drag-order').onclick = async function () {
+  this.disabled = true;
+  syncPointsToRoute();
+  await trySaveLinkedFile();
+  showToast('✓ Ordem salva no roteiro', 'success');
+  this.disabled = false;
+};
+
+// Salva no JSON a ordem escolhida pelo TSP (a que aparece em "Rota da sua preferência"),
+// mantendo ao final quaisquer pontos que não entraram na otimização (ex.: sem coordenadas).
+document.getElementById('btn-save-tsp-order').onclick = async function () {
+  if (!optimizedStops?.length) { showToast('Nenhuma rota otimizada para salvar.', 'error'); return; }
+  this.disabled = true;
+  const leftover = points.filter(p => !optimizedStops.includes(p));
+  points = [...optimizedStops, ...leftover];
+  syncPointsToRoute();
+  await trySaveLinkedFile();
+  renderList();
+  showToast('✓ Ordem otimizada salva no roteiro', 'success');
+  this.disabled = false;
+};
 
 document.getElementById('btn-edit-route').onclick = () => {
   if (document.getElementById('edit-panel').classList.contains('hidden')) openEditPanel();
@@ -960,7 +1044,8 @@ document.getElementById('btn-export-all-kml').onclick = function () {
 
 const showOptimizedOrder = orderedStops => {
   const box = document.getElementById('order-box');
-  if (!orderedStops?.length) { box.classList.add('hidden'); return; }
+  const saveBtn = document.getElementById('btn-save-tsp-order');
+  if (!orderedStops?.length) { box.classList.add('hidden'); saveBtn.classList.add('hidden'); return; }
   let html = '<p class="order-box-title">✓ Rota da sua preferência</p>';
   html += `<div class="row row-static"><span class="row-name">1</span><div class="row-static-body"><div class="row-static-name">BASE</div><div class="note">${escXML(START_END)}</div></div></div>`;
   orderedStops.forEach((p, idx) => {
@@ -969,6 +1054,7 @@ const showOptimizedOrder = orderedStops => {
   });
   html += `<div class="row row-static"><span class="row-name">${orderedStops.length + 2}</span><div class="row-static-body"><div class="row-static-name">BASE</div><div class="note">Retorno ao ponto inicial</div></div></div>`;
   box.innerHTML = html; box.classList.remove('hidden');
+  saveBtn.classList.remove('hidden');
 };
 
 // ============================================================================
@@ -1472,3 +1558,64 @@ document.getElementById('panel-btn-save').onclick = function () {
   currentRouteKey = CUSTOM_ROUTE_PREFIX + name;
   refreshDeleteRouteButton();
 };
+
+
+// ============================================================================
+// TEST HOOKS
+// Bloco inofensivo para produção: apenas expõe, em `window.__testHooks`, as
+// funções e o estado interno do módulo para que os testes automatizados
+// consigam chamá-los diretamente (o script não usa `export`/módulos ES).
+// Nada aqui altera comportamento — é só uma "porta dos fundos" de leitura/escrita
+// para o ambiente de testes.
+// ============================================================================
+if (typeof window !== 'undefined') {
+  window.__testHooks = {
+    // utils
+    escXML, escURL, normalizeText, titleCasePt, formatAddr, getToken,
+    // geocoding
+    geocodeMapbox, pickBestFeature, ensureStartCoord,
+    // tsp / distância
+    haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
+    // persistência json
+    saveToStorage, loadFromStorage, exportJSON, importFromJSON, applyLoadedRoutes,
+    // kml
+    parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
+    processKMLFiles, mergeRoutesFromFile,
+    // links / qr
+    buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
+    // roteiro (grid principal)
+    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow, openFix,
+    // edição de pontos
+    openEditPanel, closeEditPanel, renderEditRows, collectEditRowsIntoDraft, buildEditRow,
+    // painel personalizar (custom)
+    openCustomPanel, closeCustomPanel, togglePointSelection, selectAllPoints, unselectAllPoints,
+    isPointSelected, geocodeCustomSelectionPoints, finishPanelLink, renderPanelPoints,
+    renderPanelSelectedList, renderPanelRouteTabs,
+    // roteiros personalizados salvos (CRUD)
+    isCustomRouteKey, getCustomRouteName, loadCustomSavedRoutes, saveCustomRoutesToStorage,
+    loadCustomSavedRouteOptions, refreshDeleteRouteButton,
+    // constantes
+    CUSTOM_ROUTE_PREFIX, STORAGE_KEY, CUSTOM_LS_KEY, START_END,
+    // acesso ao estado interno (getters/setters) — necessário pois são `let` no escopo do módulo
+    state: {
+      get routes() { return routes; }, set routes(v) { routes = v; },
+      get points() { return points; }, set points(v) { points = v; },
+      get startCoord() { return startCoord; }, set startCoord(v) { startCoord = v; },
+      get currentRoute() { return currentRoute; }, set currentRoute(v) { currentRoute = v; },
+      get currentRouteKey() { return currentRouteKey; }, set currentRouteKey(v) { currentRouteKey = v; },
+      get customSelection() { return customSelection; }, set customSelection(v) { customSelection = v; },
+      get panelCurrentRoute() { return panelCurrentRoute; }, set panelCurrentRoute(v) { panelCurrentRoute = v; },
+      get editDraftPoints() { return editDraftPoints; }, set editDraftPoints(v) { editDraftPoints = v; },
+      get savedCustomRoutes() { return savedCustomRoutes; }, set savedCustomRoutes(v) { savedCustomRoutes = v; },
+      get exportSelection() { return exportSelection; }, set exportSelection(v) { exportSelection = v; },
+      get geocodeDone() { return geocodeDone; }, set geocodeDone(v) { geocodeDone = v; },
+      get isOptimized() { return isOptimized; }, set isOptimized(v) { isOptimized = v; },
+      get optimizedStops() { return optimizedStops; }, set optimizedStops(v) { optimizedStops = v; },
+      get links() { return links; }, set links(v) { links = v; },
+      get loadedFileNames() { return loadedFileNames; }, set loadedFileNames(v) { loadedFileNames = v; },
+      get customCurrentLink() { return customCurrentLink; }, set customCurrentLink(v) { customCurrentLink = v; },
+      get customOptimizedStops() { return customOptimizedStops; }, set customOptimizedStops(v) { customOptimizedStops = v; },
+    }
+  };
+  window.dispatchEvent(new Event('__scriptReady'));
+}

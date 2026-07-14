@@ -1,0 +1,15 @@
+{
+  "name": "roteiros-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pretest": "node build-fixture.js"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.4",
+    "jsdom": "^25.0.1",
+    "fake-indexeddb": "^6.0.0"
+  }
+}
