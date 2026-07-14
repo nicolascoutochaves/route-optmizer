@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadApp, mockFetch, mapboxSuccessResponse, mapboxEmptyResponse, samplePoint } from './testUtils.js';
+import { loadApp, mockFetch, apiSuccessResponse, apiNotFoundResponse, samplePoint } from './testUtils.js';
 
 function setupRouteWithOnePoint(h) {
   h.state.routes = { R1: [samplePoint({ name: 'P1', address: 'Rua Velha, 10' })] };
@@ -23,7 +23,7 @@ describe('Correção pontual de endereço (fix box)', () => {
     setupRouteWithOnePoint(h);
     h.openFix(0);
     document.getElementById('fix-input').value = 'Rua Nova, 200, Porto Alegre, RS, Brasil';
-    mockFetch(async () => mapboxSuccessResponse({ lng: -51.19, lat: -30.05, place_name: 'Rua Nova, 200' }));
+    mockFetch(async () => apiSuccessResponse({ lng: -51.19, lat: -30.05, label: 'Rua Nova, 200' }));
 
     const btn = document.getElementById('btn-fix-geo');
     await btn.onclick.call(btn);
@@ -42,7 +42,7 @@ describe('Correção pontual de endereço (fix box)', () => {
     setupRouteWithOnePoint(h);
     h.openFix(0);
     document.getElementById('fix-input').value = 'Endereço Inexistente, 99999999';
-    mockFetch(async () => mapboxEmptyResponse());
+    mockFetch(async () => apiNotFoundResponse());
 
     const btn = document.getElementById('btn-fix-geo');
     await btn.onclick.call(btn);
