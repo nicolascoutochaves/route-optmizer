@@ -14,12 +14,6 @@ describe('Utilitários de texto', () => {
     expect(h.escXML('')).toBe('');
   });
 
-  it('normalizeText remove acentos, colapsa espaços e coloca em minúsculas', async () => {
-    const h = await loadApp();
-    expect(h.normalizeText('  Ilha   da  PINTADA  ')).toBe('ilha da pintada');
-    expect(h.normalizeText('São João, RS')).toBe('sao joao, rs');
-  });
-
   it('titleCasePt capitaliza cada palavra preservando acentos', async () => {
     const h = await loadApp();
     expect(h.titleCasePt('avenida martinho poeta')).toBe('Avenida Martinho Poeta');
@@ -48,5 +42,12 @@ describe('Utilitários de texto', () => {
     const h = await loadApp();
     expect(h.formatAddr('')).toBe('');
     expect(h.formatAddr(null)).toBe('');
+  });
+
+  it('não expõe mais escURL/normalizeText no client (dead code removido junto com pickBestFeature)', async () => {
+    const h = await loadApp();
+    expect(h.escURL).toBeUndefined();
+    expect(h.normalizeText).toBeUndefined();
+    expect(h.pickBestFeature).toBeUndefined();
   });
 });
