@@ -237,19 +237,6 @@ document.getElementById('btn-fsa-unlink').onclick = async () => {
 // SUPABASE — auth + persistência de roteiros no banco (via Vercel Serverless
 // Function, mesmo padrão já usado para o Mapbox em /api/request)
 // ============================================================================
-// Assim como o Mapbox, as credenciais reais do Supabase (URL do projeto +
-// anon key) NUNCA ficam no client: a function em api/supabase/[...path].js
-// injeta os headers `apikey` (e `Authorization: Bearer <anon key>` quando o
-// client não está autenticado) antes de repassar a chamada para
-// `/rest/v1/*` ou `/auth/v1/*` do Supabase. O client só envia o próprio
-// access_token da sessão logada (necessário para o RLS reconhecer o
-// usuário). Como a function roda no mesmo domínio do app (Vercel), não há
-// CORS a configurar.
-//
-// Acesso ao banco (leitura E escrita) só é liberado para usuários cadastrados
-// manualmente na tabela `authorized_users` (ver schema.sql) — usuários
-// anônimos ou logados-mas-não-cadastrados seguem exclusivamente no fluxo
-// local de import/export de KML/JSON, que seus dados jamais tocam o banco.
 const SUPABASE_PROXY_URL = '/api/supabase'; // Vercel Serverless Function — ver api/supabase/[...path].js
 const SUPABASE_SESSION_KEY = 'roteiros_supabase_session';
 const DB_TOGGLE_KEY = 'roteiros_db_toggle';
@@ -335,8 +322,8 @@ const dbRowToPoint = row => ({
   name: row.name, address: row.address, origAddress: row.orig_address, mapsAddress: row.maps_address,
   lat: row.lat, lng: row.lng, status: row.status, corrected: !!row.corrected,
   isGeocodable: row.is_geocodable !== false, description: row.description,
-  roteiro: row.roteiro, subRoteiro: row.sub_roteiro, bairro: row.bairro, cidade: row.cidade,
-  complemento: row.complemento, setorAbastecimento: row.setor_abastecimento, sistema: row.sistema,
+  roteiro: row.roteiro, subRoteiro: row.sub_roteiro,
+  setorAbastecimento: row.setor_abastecimento, sistema: row.sistema,
 });
 
 /** Converte um ponto do app (camelCase) para uma linha da tabela route_points (snake_case). */
@@ -345,8 +332,8 @@ const pointToDbRow = (routeKey, order, p) => ({
   name: p.name ?? null, address: p.address ?? null, orig_address: p.origAddress ?? null, maps_address: p.mapsAddress ?? null,
   lat: p.lat ?? null, lng: p.lng ?? null, status: p.status ?? null, corrected: !!p.corrected,
   is_geocodable: p.isGeocodable !== false, description: p.description ?? null,
-  roteiro: p.roteiro ?? null, sub_roteiro: p.subRoteiro ?? null, bairro: p.bairro ?? null, cidade: p.cidade ?? null,
-  complemento: p.complemento ?? null, setor_abastecimento: p.setorAbastecimento ?? null, sistema: p.sistema ?? null,
+  roteiro: p.roteiro ?? null, sub_roteiro: p.subRoteiro ?? null,
+  setor_abastecimento: p.setorAbastecimento ?? null, sistema: p.sistema ?? null,
 });
 
 /** Confere se o usuário logado está cadastrado em `authorized_users` (RLS decide o resto). */
@@ -376,7 +363,6 @@ const supabaseSignOut = async () => {
   supabaseSession = null; isAuthorizedUser = false;
   persistSupabaseSession();
   if (dataSource === 'db') {
-    // Dados sigilosos do banco não devem permanecer visíveis após logout
     routes = {}; loadedFileNames = []; dataSource = 'local';
     saveToStorage(); hideSavedBar(); renderLoadedFilesList([]);
     ['sec-routes', 'sec-proc', 'sec-out'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
@@ -440,7 +426,6 @@ const saveRoutesToDB = async () => {
   for (const [routeKey, pts] of Object.entries(routes)) {
     pts.forEach((p, i) => rows.push(pointToDbRow(routeKey, i, p)));
   }
-  // Mesma semântica do "salvar arquivo vinculado": substitui tudo de uma vez.
   await supabaseRequest('/rest/v1/route_points?route_key=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   if (rows.length) {
     await supabaseRequest('/rest/v1/route_points', { method: 'POST', body: rows, headers: { Prefer: 'return=minimal' } });
@@ -459,7 +444,6 @@ const maybeSyncRoutesToDB = () => {
   saveRoutesToDB().catch(e => showToast('⚠️ Falha ao sincronizar com o banco: ' + e.message, 'error'));
 };
 
-// ---- Wiring da UI: toggle, botão de login e painel de auth ----
 document.getElementById('db-toggle')?.addEventListener('change', async e => {
   setDBToggle(e.target.checked);
   if (dbToggleOn && isAuthorizedUser) await loadRoutesFromDB();
@@ -508,9 +492,6 @@ const geocodeMapbox = async query => {
   const q0 = (query || '').trim();
   if (!q0) return null;
 
-  // Chama a API local do Vercel passando o endereço como parâmetro.
-  // A chave do Mapbox nunca é exposta no client — fica configurada como
-  // variável de ambiente na serverless function.
   const url = `/api/request?query=${encodeURIComponent(q0)}`;
 
   let res;
@@ -529,7 +510,6 @@ const geocodeMapbox = async query => {
   }
 
   try {
-    // Retorna diretamente o objeto { lng, lat, label } processado pelo servidor
     return await res.json();
   } catch (e) {
     throw new Error('Resposta inválida do servidor de geocodificação.');
@@ -609,7 +589,7 @@ const tourDistanceKm = stops => {
 // ============================================================================
 const saveToStorage = () => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), fileNames: loadedFileNames, routes })); } catch (e) { }
-  maybeSyncRoutesToDB(); // fire-and-forget: só faz algo se dataSource === 'db' e o usuário for autorizado
+  maybeSyncRoutesToDB();
 };
 
 const loadFromStorage = () => {
@@ -836,7 +816,6 @@ const renderRouteButtons = () => {
 // INIT — File System Access API com fallback para localStorage
 // ============================================================================
 window.addEventListener('DOMContentLoaded', async () => {
-  // Toggle "Carregar do Banco" — ligado por padrão
   try { dbToggleOn = localStorage.getItem(DB_TOGGLE_KEY) !== '0'; } catch (e) { dbToggleOn = true; }
   updateDBToggleUI();
 
@@ -856,7 +835,6 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (await verifyPermission(handle, false)) {
           loaded = await readFromHandle(handle);
         } else {
-          // Permissão expirou — o usuário precisa clicar "Recarregar" para concedê-la novamente
           updateFSABar(handle.name);
           document.getElementById('fi-msg').textContent = '⚠️ Clique em "🔄 Recarregar" para atualizar os dados do arquivo vinculado.';
         }
@@ -890,7 +868,6 @@ const selectRoute = (name, btn) => {
   renderList();
   document.getElementById('sec-proc').classList.remove('hidden');
   document.getElementById('sec-out').classList.add('hidden');
-  document.getElementById('fix-box').classList.add('hidden');
   document.getElementById('edit-panel').classList.add('hidden');
   document.getElementById('pbar').classList.add('hidden');
   document.getElementById('ptxt').textContent = '';
@@ -960,73 +937,15 @@ const renderList = () => {
   points.forEach((p, i) => {
     const row = document.createElement('div');
     row.className = 'row'; row.id = 'r' + i;
-    row.onclick = () => openFix(i);
     c.appendChild(row); updateRow(i);
   });
   document.getElementById('btn-save-drag-order').classList.toggle('hidden', points.length === 0);
 };
 
 // ============================================================================
-// FIX BOX (correção manual de endereço/coordenada)
-// ============================================================================
-const openFix = i => {
-  if (i == null || !points[i]) return;
-  selectedIdx = i;
-  points.forEach((_, j) => updateRow(j));
-  const p = points[i];
-  document.getElementById('fix-pname').textContent = p.name;
-  document.getElementById('fix-orig').textContent = p.origAddress || p.address || '(sem endereço)';
-  document.getElementById('fix-input').value = formatAddr(p.origAddress || p.address || '');
-  document.getElementById('fix-result').textContent = '';
-  document.getElementById('fix-result').style.color = '';
-  document.getElementById('fix-box').classList.remove('hidden');
-  document.getElementById('fix-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-};
-
-document.getElementById('btn-fix-cancel').onclick = () => {
-  selectedIdx = -1;
-  points.forEach((_, j) => updateRow(j));
-  document.getElementById('fix-box').classList.add('hidden');
-};
-
-document.getElementById('btn-fix-geo').onclick = async function () {
-  this.disabled = true;
-  const inp = document.getElementById('fix-input').value.trim();
-  const res = document.getElementById('fix-result');
-  res.style.color = '';
-
-  if (!inp) { res.textContent = 'Digite um endereço.'; this.disabled = false; return; }
-  if (selectedIdx < 0 || !points[selectedIdx]) {
-    res.style.color = 'var(--color-error)'; res.textContent = 'Nenhum ponto selecionado.'; this.disabled = false; return;
-  }
-
-  res.textContent = 'Geocodificando...';
-  try {
-    const r = await geocodeMapbox(inp);
-    if (r) {
-      points[selectedIdx] = { ...points[selectedIdx], lat: r.lat, lng: r.lng, address: inp, mapsAddress: formatAddr(inp), status: 'ok', corrected: true };
-      updateRow(selectedIdx);
-      syncPointsToRoute();
-      res.style.color = 'var(--color-success)';
-      res.textContent = '✓ Reposicionado → ' + r.label;
-      if (geocodeDone && startCoord) await buildOutputs();
-    } else {
-      res.style.color = 'var(--color-error)';
-      res.textContent = 'Não encontrado. Tente: Rua, número, bairro, Porto Alegre.';
-    }
-  } catch (e) {
-    res.style.color = 'var(--color-error)';
-    res.textContent = 'Erro: ' + e.message;
-    showToast(e.message, 'error');
-  }
-  this.disabled = false;
-};
-
-// ============================================================================
 // EDITOR DE PONTOS DO ROTEIRO (nome, endereço, lat/lng, travar coordenadas)
 // ============================================================================
 const openEditPanel = () => {
-  // Cria uma cópia de trabalho — só é aplicada de volta a `points`/`routes` ao salvar.
   editDraftPoints = points.map(p => ({ ...p, isGeocodable: p.isGeocodable !== false }));
   renderEditRows();
   const status = document.getElementById('edit-status');
@@ -1087,10 +1006,6 @@ const buildEditRow = (p, idx) => {
     renderEditRows();
   };
 
-  // Permite colar "lat, lng" (formato copiado do Google Maps) diretamente no campo
-  // Latitude, preenchendo automaticamente os dois campos (lat e lng).
-  // Usa o evento 'input' (em vez de 'paste') para funcionar de forma confiável
-  // em qualquer navegador/dispositivo, inclusive celular.
   const latInput = row.querySelector('.edit-lat');
   const lngInput = row.querySelector('.edit-lng');
   const lockInput = row.querySelector('.edit-lock');
@@ -1133,14 +1048,11 @@ const collectEditRowsIntoDraft = () => {
     p.isGeocodable = !row.querySelector('.edit-lock').checked;
     p.mapsAddress = p.mapsAddress || formatAddr(p.address);
     p.status = (p.lat !== null && p.lng !== null) ? 'ok' : (p.address ? 'pending' : 'error');
-    // Coordenada travada e presente conta como "corrigida manualmente" para fins visuais
     if (p.isGeocodable === false && p.lat !== null && p.lng !== null) p.corrected = true;
   });
 };
 
 document.getElementById('btn-edit-add').onclick = () => {
-  // Novo ponto "hardcoded": nasce com coordenadas travadas por padrão,
-  // já que o usuário está inserindo lat/lng manualmente.
   editDraftPoints.push({
     name: '', address: '', origAddress: '', mapsAddress: '',
     lat: null, lng: null, status: 'pending', corrected: false, isGeocodable: false
@@ -1166,14 +1078,12 @@ document.getElementById('btn-edit-save').onclick = async function () {
   status.style.color = 'var(--color-success)';
   status.textContent = '✓ Alterações salvas no roteiro.';
   showToast('✓ Roteiro atualizado', 'success');
-  // Coordenadas podem ter mudado — força novo cálculo antes de gerar link/otimizar de novo
   geocodeDone = false; isOptimized = false;
   this.disabled = false;
 };
 
 document.getElementById('btn-edit-close').onclick = closeEditPanel;
 
-// Salva no JSON a ordem atual dos pontos (arrastados manualmente na lista antes do TSP).
 document.getElementById('btn-save-drag-order').onclick = async function () {
   this.disabled = true;
   syncPointsToRoute();
@@ -1182,8 +1092,6 @@ document.getElementById('btn-save-drag-order').onclick = async function () {
   this.disabled = false;
 };
 
-// Salva no JSON a ordem escolhida pelo TSP (a que aparece em "Rota da sua preferência"),
-// mantendo ao final quaisquer pontos que não entraram na otimização (ex.: sem coordenadas).
 document.getElementById('btn-save-tsp-order').onclick = async function () {
   if (!optimizedStops?.length) { showToast('Nenhuma rota otimizada para salvar.', 'error'); return; }
   this.disabled = true;
@@ -1351,13 +1259,9 @@ const geocodeAllPoints = async () => {
   for (let i = 0; i < total; i++) {
     const p = points[i];
     if (p.isGeocodable === false) {
-      // Ponto com coordenadas travadas: nunca chama a API de geocodificação.
       p.status = (p.lat !== null && p.lng !== null) ? 'ok' : 'error';
       ptxt.textContent = `${i + 1}/${total} — ${p.name} (🔒 coordenadas travadas)`;
-    } /* else if (p.lat !== null && p.lng !== null) {
-      p.status = 'ok';
-      ptxt.textContent = `${i + 1}/${total} — ${p.name} (coord. existente)`;
-    } */ else if (!p.address) {
+    } else if (!p.address) {
       p.status = 'error';
     } else {
       ptxt.textContent = `Geocodificando ${i + 1}/${total} — ${p.name}…`;
@@ -1387,7 +1291,7 @@ const geocodeMissingInRoutes = async (routeNames, progressCb) => {
   const targets = [];
   routeNames.forEach(name => {
     (routes[name] || []).forEach((p, idx) => {
-      if (p.isGeocodable === false) return; // travado, nunca geocodificar
+      if (p.isGeocodable === false) return;
       const hasCoord = p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined && !isNaN(p.lat) && !isNaN(p.lng);
       if (hasCoord || !p.address) return;
       targets.push({ name, idx });
@@ -1407,7 +1311,6 @@ const geocodeMissingInRoutes = async (routeNames, progressCb) => {
   }
 
   saveToStorage();
-  // Se o roteiro atualmente aberto foi afetado, atualiza a cópia de trabalho `points`
   if (currentRouteKey && routeNames.includes(currentRouteKey)) {
     points = routes[currentRouteKey].map(p => ({ isGeocodable: true, ...p }));
     renderList();
@@ -1651,11 +1554,6 @@ const setPanelStatus = (msg, type) => {
   el.style.color = type === 'error' ? 'var(--color-error)' : type === 'success' ? 'var(--color-success)' : 'var(--color-text-secondary)';
 };
 
-// BUG CORRIGIDO: antes, se todos os pontos selecionados já tinham coordenadas,
-// a função retornava sem nunca chamar ensureStartCoord(), e um clique em
-// "Gerar link"/"Otimizar" sem ter passado pelo fluxo principal antes quebrava
-// (startCoord ficava null e buildGoogleMapsUrl acessava .lat de null).
-// Agora a base é sempre geocodificada primeiro.
 const geocodeCustomSelectionPoints = async () => {
   const status = document.getElementById('panel-status');
   try { await ensureStartCoord(); } catch (e) { setPanelStatus(e.message, 'error'); return false; }
@@ -1670,7 +1568,6 @@ const geocodeCustomSelectionPoints = async () => {
   for (let i = 0; i < customSelection.length; i++) {
     const sel = customSelection[i], p = sel.point;
     if (p.isGeocodable === false) {
-      // Ponto com coordenadas travadas: nunca chama a API de geocodificação.
       p.status = (p.lat !== null && p.lng !== null) ? 'ok' : 'error';
       fill.style.width = Math.round((i + 1) / customSelection.length * 100) + '%';
       continue;
@@ -1841,46 +1738,28 @@ document.getElementById('panel-btn-save').onclick = function () {
 
 // ============================================================================
 // TEST HOOKS
-// Bloco inofensivo para produção: apenas expõe, em `window.__testHooks`, as
-// funções e o estado interno do módulo para que os testes automatizados
-// consigam chamá-los diretamente (o script não usa `export`/módulos ES).
-// Nada aqui altera comportamento — é só uma "porta dos fundos" de leitura/escrita
-// para o ambiente de testes.
 // ============================================================================
 if (typeof window !== 'undefined') {
   window.__testHooks = {
-    // utils
     escXML, titleCasePt, formatAddr,
-    // geocoding
     geocodeMapbox, ensureStartCoord,
-    // tsp / distância
     haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
-    // persistência json
     saveToStorage, loadFromStorage, exportJSON, importFromJSON, applyLoadedRoutes,
-    // supabase — auth + persistência no banco
     supabaseRequest, supabaseSignIn, supabaseSignOut, checkAuthorization, restoreSupabaseSession,
     loadRoutesFromDB, saveRoutesToDB, maybeSyncRoutesToDB, dbRowToPoint, pointToDbRow,
     setDBToggle, updateDBToggleUI, updateJsonExportButtonState, updateAuthUI,
-    // kml
     parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
     processKMLFiles, mergeRoutesFromFile,
-    // links / qr
     buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
-    // roteiro (grid principal)
-    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow, openFix,
-    // edição de pontos
+    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow,
     openEditPanel, closeEditPanel, renderEditRows, collectEditRowsIntoDraft, buildEditRow,
-    // painel personalizar (custom)
     openCustomPanel, closeCustomPanel, togglePointSelection, selectAllPoints, unselectAllPoints,
     isPointSelected, geocodeCustomSelectionPoints, finishPanelLink, renderPanelPoints,
     renderPanelSelectedList, renderPanelRouteTabs,
-    // roteiros personalizados salvos (CRUD)
     isCustomRouteKey, getCustomRouteName, loadCustomSavedRoutes, saveCustomRoutesToStorage,
     loadCustomSavedRouteOptions, refreshDeleteRouteButton,
-    // constantes
     CUSTOM_ROUTE_PREFIX, STORAGE_KEY, CUSTOM_LS_KEY, START_END,
     SUPABASE_PROXY_URL, SUPABASE_SESSION_KEY, DB_TOGGLE_KEY,
-    // acesso ao estado interno (getters/setters) — necessário pois são `let` no escopo do módulo
     state: {
       get routes() { return routes; }, set routes(v) { routes = v; },
       get dataSource() { return dataSource; }, set dataSource(v) { dataSource = v; },

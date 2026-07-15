@@ -216,6 +216,11 @@ body {
   color: #34d399;
 }
 
+.badge.locked {
+  background: transparent;
+  padding: 0 2px;
+}
+
 .progress {
   height: 4px;
   background: var(--color-border);
@@ -261,6 +266,34 @@ body {
 
 #pts-list .row.drop-below {
   box-shadow: 0 2px 0 0 #0052B3;
+}
+
+.row-static {
+  cursor: default;
+}
+
+.row-static-body {
+  flex: 1;
+}
+
+.row-static-body-flex {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-static-name {
+  font-weight: 600;
+}
+
+.row-static-name-regular {
+  font-weight: 500;
+}
+
+.row-static-coord {
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+  min-width: 120px;
+  text-align: right;
 }
 
 .drag-handle {
@@ -386,6 +419,56 @@ body {
   background: rgba(239, 68, 68, 0.25);
 }
 
+/* --- Botões pequenos / agrupados / variações --- */
+.btn-group-wrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.btn-danger-outline {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.btn-text-sm {
+  font-size: 0.85rem;
+}
+
+.btn-delete-route {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.btn-flex {
+  flex: 1;
+}
+
+.btn-fixed {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem;
+}
+
+.label-btn {
+  cursor: pointer;
+}
+
+#btn-fsa-help {
+  position: relative;
+  left: 60%;
+  background: #474747;
+  border-color: #474747;
+}
+
+#btn-fsa-help:hover:not(:disabled) {
+  color: var(--color-background);
+}
+
 .route-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -393,6 +476,7 @@ body {
 }
 
 .route-btn {
+  position: relative;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -437,6 +521,24 @@ body {
   color: var(--color-text-secondary);
 }
 
+.route-checkbox {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 1.2em;
+  height: 1.2em;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .code-box {
   background: #0a0e14;
   border: 1px solid var(--color-border);
@@ -466,6 +568,12 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+}
+
+.buttons-top-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .stats {
@@ -511,6 +619,12 @@ body {
   margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.qr-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
 }
 
 #qrcode {
@@ -565,6 +679,13 @@ body {
   line-height: 1.5;
 }
 
+.error-box-visible {
+  display: block;
+}
+
+/* Base compartilhada pelo #auth-box (o antigo #fix-box de correção pontual de
+   endereço foi removido junto com a funcionalidade; esta classe e o cabeçalho
+   .fix-box-header/.fix-box-icon/.fix-box-label seguem em uso pelo login). */
 .fix-box {
   background: rgba(251, 191, 36, 0.08);
   border-left: 3px solid var(--color-warning);
@@ -574,11 +695,26 @@ body {
   display: none;
 }
 
-/* Correção: sem esta regra, remover a classe "hidden" via JS nunca tornava o
-   .fix-box (e o novo #auth-box) visível, pois a declaração acima já fixava
-   display:none incondicionalmente. */
+/* Correção: sem esta regra, remover a classe "hidden" via JS nunca tornava
+   o #auth-box visível, pois a declaração acima já fixava display:none
+   incondicionalmente. */
 .fix-box:not(.hidden) {
   display: block;
+}
+
+.fix-box-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fix-box-icon {
+  font-size: 1.2rem;
+}
+
+.fix-box-label {
+  font-weight: 600;
 }
 
 input[type="file"],
@@ -611,7 +747,30 @@ input[type="password"]:focus {
   line-height: 1.5;
 }
 
-.hidden {
+/* --- Notas / labels espaçados --- */
+.note-spaced {
+  margin-top: 0.75rem;
+}
+
+.note-spaced-sm {
+  margin-bottom: 0.75rem;
+}
+
+.note-flush {
+  margin: 0;
+}
+
+.note-min-height {
+  min-height: 16px;
+}
+
+.lbl-spaced {
+  margin-bottom: 0.5rem;
+}
+
+.hidden,
+.visually-hidden,
+.btn-hidden {
   display: none;
 }
 
@@ -725,6 +884,126 @@ input[type="password"]:focus {
   background: rgba(0, 0, 0, 0.2);
   padding: 2px 7px;
   border-radius: 3px;
+}
+
+/* --- Barra "salvo" --- */
+.saved-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1rem;
+  padding: 10px 12px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  border-radius: 6px;
+}
+
+/* --- Linha do botão de importar JSON --- */
+.fsa-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.import-json-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.loaded-files-list {
+  margin-top: 0.5rem;
+}
+
+.loaded-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 4px 0 0;
+  padding: 3px 8px;
+  background: rgba(0, 82, 179, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+/* --- Drop zone --- */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 1.5rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(0, 82, 179, 0.04);
+}
+
+.drop-zone-icon {
+  font-size: 2rem;
+}
+
+.drop-zone-text {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.drop-zone-active {
+  border-color: var(--color-primary-light);
+  background: rgba(0, 102, 204, 0.08);
+}
+
+/* --- Seção de processamento --- */
+.rname-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.pts-list {
+  margin-top: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.order-box {
+  margin-top: 12px;
+}
+
+.order-box-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.custom-card-title {
+  color: var(--color-custom);
+}
+
+.custom-card-info {
+  color: var(--color-custom);
+  opacity: 0.8;
+}
+
+.sel-coord-flag {
+  font-size: 0.7rem;
+}
+
+.sel-coord-ok {
+  color: var(--color-custom);
+}
+
+.sel-coord-warn {
+  color: var(--color-text-tertiary);
 }
 
 /* ============================================================
@@ -854,6 +1133,36 @@ input[type="password"]:focus {
   color: var(--color-custom);
   border-radius: 3px;
   padding: 1px 4px;
+}
+
+/* --- Painel lateral: seleção de todos os pontos --- */
+.panel-select-all-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(0, 82, 179, 0.03);
+}
+
+.panel-select-all-label {
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.panel-points-list {
+  max-height: 30vh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.panel-points-placeholder {
+  padding: 1.25rem;
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: 0.85rem;
 }
 
 /* Points list with checkboxes */
@@ -1043,6 +1352,10 @@ input[type="password"]:focus {
   font-size: 0.85rem;
 }
 
+.sel-empty-hint {
+  font-size: 0.75rem;
+}
+
 /* Panel actions footer */
 .panel-footer {
   flex-shrink: 0;
@@ -1084,6 +1397,16 @@ input[type="password"]:focus {
   outline: none;
   border-color: var(--color-custom);
   box-shadow: 0 0 0 2px rgba(0, 184, 148, 0.2);
+}
+
+.panel-route-name-input {
+  margin: 0;
+}
+
+.btn-panel-save {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .panel-mini-progress {
@@ -1149,291 +1472,17 @@ input[type="password"]:focus {
   overflow-y: auto;
 }
 
+.panel-link-wrap {
+  padding: 0 1.25rem;
+  margin-top: 0.75rem;
+}
+
 /* No routes hint in panel */
 .panel-no-routes {
   padding: 2rem 1.25rem;
   text-align: center;
   color: var(--color-text-tertiary);
   font-size: 0.9rem;
-}
-
-@media (max-width: 768px) {
-  body {
-    padding: 1rem;
-  }
-
-  .header h1 {
-    font-size: 1.4rem;
-  }
-
-  .route-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .buttons-row,
-  .buttons-top {
-    flex-direction: column;
-  }
-
-  .btn {
-    width: 100%;
-  }
-
-  #qrcode {
-    max-width: 250px;
-  }
-
-  #custom-panel {
-    width: 100vw;
-  }
-}
-
-
-
-/* ==========================================================
-   Utilitários e classes extraídas dos estilos inline
-   ========================================================== */
-
-.hidden {
-  display: none;
-}
-
-.visually-hidden {
-  display: none;
-}
-
-/* --- Notas / labels espaçados --- */
-.note-spaced {
-  margin-top: 0.75rem;
-}
-
-.note-spaced-sm {
-  margin-bottom: 0.75rem;
-}
-
-.note-flush {
-  margin: 0;
-}
-
-.note-min-height {
-  min-height: 16px;
-}
-
-.lbl-spaced {
-  margin-bottom: 0.5rem;
-}
-
-/* --- Botões pequenos / agrupados --- */
-.btn-group-wrap {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 0.8rem;
-}
-
-.btn-danger-outline {
-  color: var(--color-error);
-  border-color: var(--color-error);
-}
-
-.btn-text-sm {
-  font-size: 0.85rem;
-}
-
-.btn-hidden {
-  display: none;
-}
-
-.btn-delete-route {
-  background: var(--color-error);
-  color: #fff;
-}
-
-.btn-flex {
-  flex: 1;
-}
-
-.btn-fixed {
-  flex: 0 0 auto;
-  padding: 0.5rem 0.75rem;
-}
-
-.label-btn {
-  cursor: pointer;
-}
-
-#btn-fsa-help {
-  position: relative;
-  left: 60%;
-  background: #474747;
-  border-color: #474747;
-}
-
-#btn-fsa-help:hover:not(:disabled) {
-  color: var(--color-background);
-}
-
-/* --- Barra "salvo" --- */
-.saved-bar {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 1rem;
-  padding: 10px 12px;
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.25);
-  border-radius: 6px;
-}
-
-/* --- Linha do botão de importar JSON --- */
-.fsa-link-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 1rem;
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-.import-json-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.loaded-files-list {
-  margin-top: 0.5rem;
-}
-
-/* --- Drop zone --- */
-.drop-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 2px dashed var(--color-border);
-  border-radius: 8px;
-  padding: 1.5rem 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: rgba(0, 82, 179, 0.04);
-}
-
-.drop-zone-icon {
-  font-size: 2rem;
-}
-
-.drop-zone-text {
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-/* --- Seção de processamento --- */
-.rname-title {
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-
-.buttons-top-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pts-list {
-  margin-top: 12px;
-  max-height: 360px;
-  overflow-y: auto;
-}
-
-.order-box {
-  margin-top: 12px;
-}
-
-/* --- Fix box --- */
-.fix-box-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.fix-box-icon {
-  font-size: 1.2rem;
-}
-
-.fix-box-label {
-  font-weight: 600;
-}
-
-.fix-pname {
-  color: var(--color-warning);
-}
-
-/* --- QR --- */
-.qr-desc {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-}
-
-/* --- Painel lateral: seleção de todos os pontos --- */
-.panel-select-all-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-border);
-  background: rgba(0, 82, 179, 0.03);
-}
-
-.panel-select-all-label {
-  cursor: pointer;
-  user-select: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.panel-points-list {
-  max-height: 30vh;
-  overflow-y: auto;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.panel-points-placeholder {
-  padding: 1.25rem;
-  text-align: center;
-  color: var(--color-text-tertiary);
-  font-size: 0.85rem;
-}
-
-.sel-empty-hint {
-  font-size: 0.75rem;
-}
-
-.panel-link-wrap {
-  padding: 0 1.25rem;
-  margin-top: 0.75rem;
-}
-
-/* --- Painel lateral: rodapé --- */
-.panel-route-name-input {
-  margin: 0;
-}
-
-.btn-panel-save {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.82rem;
-  white-space: nowrap;
 }
 
 /* ==========================================================
@@ -1457,6 +1506,10 @@ input[type="password"]:focus {
 .edit-panel-title {
   font-weight: 600;
   font-size: 1rem;
+}
+
+.edit-panel-actions {
+  margin-top: 12px;
 }
 
 .edit-rows {
@@ -1513,118 +1566,39 @@ input[type="password"]:focus {
   user-select: none;
 }
 
-.edit-panel-actions {
-  margin-top: 12px;
+@media (max-width: 768px) {
+  body {
+    padding: 1rem;
+  }
+
+  .header h1 {
+    font-size: 1.4rem;
+  }
+
+  .route-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .buttons-row,
+  .buttons-top {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  #qrcode {
+    max-width: 250px;
+  }
+
+  #custom-panel {
+    width: 100vw;
+  }
 }
 
 @media (max-width: 720px) {
   .edit-row-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-}
-
-/* ==========================================================
-   Classes que substituem estilos inline gerados via JS
-   ========================================================== */
-.loaded-file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 3px 4px 0 0;
-  padding: 3px 8px;
-  background: rgba(0, 82, 179, 0.1);
-  border-radius: 4px;
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-}
-
-.drop-zone-active {
-  border-color: var(--color-primary-light);
-  background: rgba(0, 102, 204, 0.08);
-}
-
-.custom-card-title {
-  color: var(--color-custom);
-}
-
-.custom-card-info {
-  color: var(--color-custom);
-  opacity: 0.8;
-}
-
-.error-box-visible {
-  display: block;
-}
-
-.order-box-title {
-  font-weight: 600;
-  font-size: 1rem;
-  margin-bottom: 12px;
-}
-
-.row-static {
-  cursor: default;
-}
-
-.row-static-body {
-  flex: 1;
-}
-
-.row-static-body-flex {
-  flex: 1;
-  min-width: 0;
-}
-
-.row-static-name {
-  font-weight: 600;
-}
-
-.row-static-name-regular {
-  font-weight: 500;
-}
-
-.row-static-coord {
-  font-size: 0.8rem;
-  color: var(--color-text-tertiary);
-  min-width: 120px;
-  text-align: right;
-}
-
-.sel-coord-flag {
-  font-size: 0.7rem;
-}
-
-.sel-coord-ok {
-  color: var(--color-custom);
-}
-
-.sel-coord-warn {
-  color: var(--color-text-tertiary);
-}
-
-.badge.locked {
-  background: transparent;
-  padding: 0 2px;
-}
-
-.route-btn {
-  position: relative;
-}
-
-.route-checkbox {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 1.2em;
-  height: 1.2em;
-  cursor: pointer;
-  z-index: 2;
-}
-
-.export-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
 }
