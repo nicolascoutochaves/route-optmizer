@@ -31,9 +31,14 @@
         <p>Geocodificação com otimização de rotas</p>
       </div>
 
-      <button id="theme-toggle" class="btn">
-        🌙 Modo escuro
-      </button>
+      <div class="header-actions">
+        <button id="btn-auth" class="btn primary" title="Entrar com sua conta para carregar os roteiros do banco">
+          🔐 Entrar
+        </button>
+        <button id="theme-toggle" class="btn">
+          🌙 Modo escuro
+        </button>
+      </div>
     </div>
 
     <!-- CONFIG SECTION -->
@@ -74,10 +79,18 @@
 
       <!-- FSA JSON link button -->
       <div class="fsa-link-row">
+        <label id="db-toggle-wrap" class="db-toggle-wrap" title="Quando ligado, os roteiros são carregados/salvos automaticamente no banco (requer login autorizado)">
+          <span class="db-toggle-switch">
+            <input type="checkbox" id="db-toggle" checked />
+            <span class="db-toggle-slider"></span>
+          </span>
+          <span class="db-toggle-label">Carregar do Banco</span>
+        </label>
         <button class="btn primary btn-text-sm" id="btn-fsa-link">🔗 Importar novo json</button>
         <span class="note note-flush">
           Arquivo onde os roteiros são salvos
         </span>
+        <span class="note note-flush" id="db-source-badge"></span>
         <div id="btn-help-container" style="width: 50%; display: block;">
           <button class="btn primary btn-text-sm" id="btn-fsa-help"
             onclick="window.open('./ajuda/ajuda_rapida.html', '_blank')">Ir para a página de ajuda</button>
@@ -160,6 +173,23 @@
         <div id="order-box" class="hidden order-box"></div>
         <button id="btn-save-tsp-order" class="btn success hidden">💾 Salvar ordem otimizada</button>
       </div>
+    </div>
+
+    <!-- AUTH BOX -->
+    <div class="fix-box hidden" id="auth-box">
+      <div class="fix-box-header">
+        <span class="fix-box-icon">🔐</span>
+        <span class="fix-box-label">Login</span>
+      </div>
+      <p class="note" id="auth-status">Faça login para carregar os roteiros do banco (acesso restrito a usuários cadastrados).</p>
+      <input type="email" id="auth-email" placeholder="E-mail" autocomplete="username" />
+      <input type="password" id="auth-password" placeholder="Senha" autocomplete="current-password" class="note-spaced-sm" />
+      <div class="buttons-row">
+        <button id="btn-auth-submit" class="btn primary">Entrar</button>
+        <button id="btn-auth-logout" class="btn btn-hidden">Sair</button>
+        <button id="btn-auth-cancel" class="btn">✕ Cancelar</button>
+      </div>
+      <p id="auth-result" class="note note-min-height note-spaced"></p>
     </div>
 
     <!-- FIX BOX -->
