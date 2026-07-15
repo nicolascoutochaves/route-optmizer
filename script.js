@@ -249,19 +249,44 @@ let suppressDBSync = false;  // evita reescrever o banco logo após lê-lo
 
 /** Chamada genérica ao proxy do Supabase (REST/Auth). Lança erro com mensagem legível em caso de falha. */
 const supabaseRequest = async (path, { method = 'GET', body, headers = {}, auth = true } = {}) => {
-  const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-  if (auth && supabaseSession?.access_token) finalHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+  const finalHeaders = { ...headers };
+  
+  // SÓ adiciona Content-Type se houver um corpo (ex: POST, PUT, DELETE, PATCH)
+  if (body !== undefined && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())) {
+    finalHeaders['Content-Type'] = 'application/json';
+  }
+  
+  // Garante que o access_token realmente existe e é válido antes de injetar
+  if (auth && supabaseSession?.access_token && supabaseSession.access_token !== 'undefined') {
+    finalHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+  }
+  
   let res;
   try {
-    res = await fetch(`${SUPABASE_PROXY_URL}${path}`, { method, headers: finalHeaders, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const fetchOptions = { 
+      method, 
+      headers: finalHeaders 
+    };
+    
+    // Só anexa o body em requisições que aceitam body
+    if (body !== undefined && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())) {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    res = await fetch(`${SUPABASE_PROXY_URL}${path}`, fetchOptions);
   } catch (e) {
     throw new Error('Não foi possível contatar o servidor (proxy Supabase). Verifique sua conexão.');
   }
+  
   if (!res.ok) {
     let msg = `Erro ${res.status}`;
-    try { const j = await res.json(); msg = j.error_description || j.msg || j.message || msg; } catch (e) { }
+    try { 
+      const j = await res.json(); 
+      msg = j.error_description || j.msg || j.message || msg; 
+    } catch (e) { }
     throw new Error(msg);
   }
+  
   if (res.status === 204) return null;
   try { return await res.json(); } catch (e) { return null; }
 };

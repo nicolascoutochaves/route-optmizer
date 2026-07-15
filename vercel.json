@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/supabase/:path*",
+      "destination": "/api/supabase/proxy.js"
+    }
+  ]
+}
