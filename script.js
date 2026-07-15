@@ -981,9 +981,9 @@ const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
 // (por roteiro / por sistema), já que é calculada a partir do nome dele.
 // ============================================================================
 const KML_BASE_STYLE =
-  '<Style id="base"><IconStyle><color>ff000000</color><scale>1.2</scale>' +
+  '<Style id="base"><IconStyle><color>ff000000</color><scale>1.8</scale>' +
   '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>' +
-  '</IconStyle><LabelStyle><scale>0.9</scale></LabelStyle></Style>\n';
+  '</IconStyle><LabelStyle><scale>1.4</scale></LabelStyle></Style>\n';
 
 /** Converte HSL (h:0-360, s/l:0-1) para o formato de cor do KML (aabbggrr). */
 const hslToKmlColor = (h, s, l) => {
