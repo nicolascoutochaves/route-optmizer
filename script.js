@@ -956,13 +956,12 @@ const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   rname = (rname || currentRoute || 'roteiro').replace(/\.xlsx$/i, '');
   let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
     `<name>${escXML(rname)}</name>\n` +
-    '<Style id="pin"><IconStyle><color>ff0055ff</color><scale>1.1</scale></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n' +
-    '<Style id="fix"><IconStyle><color>ff00aaff</color><scale>1.2</scale></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n' +
-    '<Style id="base"><IconStyle><color>ff00ff00</color><scale>1.3</scale></IconStyle></Style>\n' +
-    '<Style id="rota"><LineStyle><color>cc0044ff</color><width>3</width></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>\n';
-  kml += `<Placemark>\n<name>BASE</name>\n<description>${escXML(START_END)}</description>\n<styleUrl>#base</styleUrl>\n<Point><coordinates>${startCoord.lng.toFixed(6)},${startCoord.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+    KML_MARKER_STYLE +
+    '<Style id="rota"><LineStyle><color>cc0000ff</color><width>3</width></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>\n';
+  kml += `<Placemark>\n<name>BASE</name>\n<description>${escXML(START_END)}</description>\n<styleUrl>#marker</styleUrl>\n<Point><coordinates>${startCoord.lng.toFixed(6)},${startCoord.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
   orderedStops.forEach((p, idx) => {
-    kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + p.name)}</name>\n<description>${escXML(p.address)}${p.corrected ? ' [CORRIGIDO]' : ''}</description>\n<styleUrl>${p.corrected ? '#fix' : '#pin'}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+    const desc = [p.address, p.corrected ? '[CORRIGIDO]' : ''].filter(Boolean).join(' ');
+    kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + p.name)}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#marker</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
   });
   const coords = [[startCoord.lng, startCoord.lat], ...orderedStops.map(p => [p.lng, p.lat]), [startCoord.lng, startCoord.lat]];
   const lc = coords.map(c => `${c[0].toFixed(6)},${c[1].toFixed(6)},0`).join('\n');
@@ -973,36 +972,69 @@ const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 };
 // ============================================================================
-// EXPORTAÇÃO KML MULTI-ROTEIRO (cada roteiro = uma camada/Folder)
+// EXPORTAÇÃO KML — estilo único (marcador circular vermelho, compatível com
+// Google Earth e Google My Maps — sem misturar "alfinete"/pin com marcador)
 // ============================================================================
-const KML_LAYER_COLORS = ['ff0055ff', 'ff00aaff', 'ff22cc55', 'ffaa00ff', 'ff0080ff', 'ff00ffdd', 'ffff6600', 'ffcc00cc'];
+const KML_MARKER_STYLE =
+  '<Style id="marker"><IconStyle><color>ff0000ff</color><scale>1.0</scale>' +
+  '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>' +
+  '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n';
 
+// ============================================================================
+// EXPORTAÇÃO KML MULTI-ROTEIRO
+// Gera DOIS agrupamentos no mesmo arquivo:
+//   1) "Por roteiro"  -> uma camada por roteiro (ideal pro Google Earth, sem
+//      limite de camadas)
+//   2) "Por sistema de abastecimento" -> uma camada por sistema, agregando
+//      pontos de todos os roteiros selecionados (no máx. ~10 camadas — ideal
+//      pro Google My Maps, que só aceita até 10)
+// ============================================================================
 const buildMultiRouteKml = (routeNames, docName) => {
   let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
-    `<name>${escXML(docName)}</name>\n`;
-
-  routeNames.forEach((_, i) => {
-    const color = KML_LAYER_COLORS[i % KML_LAYER_COLORS.length];
-    kml += `<Style id="pin${i}"><IconStyle><color>${color}</color><scale>1.1</scale></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n`;
-  });
-  kml += '<Style id="base"><IconStyle><color>ff00ff00</color><scale>1.3</scale></IconStyle></Style>\n';
+    `<name>${escXML(docName)}</name>\n` +
+    KML_MARKER_STYLE;
 
   kml += '<Folder>\n<name>📍 Base</name>\n' +
-    `<Placemark>\n<name>BASE</name>\n<description>${escXML(START_END)}</description>\n<styleUrl>#base</styleUrl>\n` +
+    `<Placemark>\n<name>BASE</name>\n<description>${escXML(START_END)}</description>\n<styleUrl>#marker</styleUrl>\n` +
     (startCoord ? `<Point><coordinates>${startCoord.lng.toFixed(6)},${startCoord.lat.toFixed(6)},0</coordinates></Point>\n` : '') +
     '</Placemark>\n</Folder>\n';
 
   let skipped = 0;
-  routeNames.forEach((name, i) => {
+  const allValidPoints = []; // { p, routeName } — usado no agrupamento por sistema
+
+  // --- Agrupamento 1: por roteiro ---
+  kml += '<Folder>\n<name>🗂️ Por roteiro</name>\n';
+  routeNames.forEach(name => {
     const pts = routes[name] || [];
     const valid = pts.filter(p => p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined && !isNaN(p.lat) && !isNaN(p.lng));
     skipped += pts.length - valid.length;
     kml += `<Folder>\n<name>${escXML(name.replace(/\.xlsx$/i, ''))}</name>\n`;
     valid.forEach((p, idx) => {
-      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#pin${i % KML_LAYER_COLORS.length}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+      allValidPoints.push({ p, routeName: name });
+      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#marker</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
     });
     kml += '</Folder>\n';
   });
+  kml += '</Folder>\n';
+
+  // --- Agrupamento 2: por sistema de abastecimento ---
+  const bySistema = {};
+  allValidPoints.forEach(({ p, routeName }) => {
+    const key = (p.sistema || '').trim() || 'Sem sistema';
+    (bySistema[key] = bySistema[key] || []).push({ p, routeName });
+  });
+
+  kml += '<Folder>\n<name>🚰 Por sistema de abastecimento</name>\n';
+  Object.keys(bySistema).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(sistema => {
+    const pts = bySistema[sistema];
+    kml += `<Folder>\n<name>${escXML(sistema)} (${pts.length})</name>\n`;
+    pts.forEach(({ p, routeName }, idx) => {
+      const desc = [p.address, `Roteiro: ${routeName.replace(/\.xlsx$/i, '')}`].filter(Boolean).join(' — ');
+      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#marker</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+    });
+    kml += '</Folder>\n';
+  });
+  kml += '</Folder>\n';
 
   kml += '</Document>\n</kml>';
   return { kml, skipped };
