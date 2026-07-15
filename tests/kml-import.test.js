@@ -1,180 +1,138 @@
-import { describe, it, expect } from 'vitest';
-import { loadApp, SAMPLE_KML, makeFile } from './testUtils.js';
+// tests/supabase.test.js
+//
+// Segue o mesmo padrão dos demais arquivos de teste do projeto: usa
+// loadApp() de testUtils.js, que recarrega a fixture do DOM e reimporta
+// script.js do zero a cada teste (estado limpo garantido), expondo
+// window.__testHooks. Nada de ler o HTML "de verdade" nem injetar
+// <script> manualmente aqui — era exatamente isso que causava o
+// `hooks` undefined (o beforeAll anterior não batia com a fixture real
+// do projeto).
 
-describe('parseKMLText', () => {
-  it('extrai name, address, lat/lng de cada Placemark de cada Folder', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
-    expect(Object.keys(result)).toEqual(['ILHA']);
-    expect(result.ILHA).toHaveLength(2);
-    const [p1, p2] = result.ILHA;
-    expect(p1.name).toBe('I01');
-    expect(p1.address).toContain('MARTINHO POETA');
-    expect(p1.lat).toBeCloseTo(-29.99135, 4);
-    expect(p1.lng).toBeCloseTo(-51.273944, 4);
-    expect(p1.status).toBe('ok');
-    expect(p2.name).toBe('I02');
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { loadApp } from './testUtils.js';
+
+let hooks;
+
+beforeEach(async () => {
+  hooks = await loadApp();
+  global.fetch = vi.fn();
+});
+
+describe('supabaseRequest', () => {
+  it('inclui Authorization quando há sessão ativa', async () => {
+    hooks.state.supabaseSession = { access_token: 'tok123' };
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+
+    await hooks.supabaseRequest('/rest/v1/route_points');
+
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(opts.headers.Authorization).toBe('Bearer tok123');
   });
 
-  it('extrai description (convertendo <br> em quebras de linha e removendo tags)', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
-    const p1 = result.ILHA[0];
-    expect(p1.description).toContain('ROTEIRO: I SUL');
-    expect(p1.description).toContain('SISTEMA: SAA - Ilha da Pintada');
-    expect(p1.description).not.toContain('<br>');
-    expect(p1.description).not.toMatch(/<[^>]+>/);
-  });
-
-  it('extrai os campos do ExtendedData: roteiro, subRoteiro, bairro, setorAbastecimento, sistema', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
-    const [p1, p2] = result.ILHA;
-
-    expect(p1.roteiro).toBe('I SUL');
-    expect(p1.subRoteiro).toBe('I SUL I');
-    expect(p1.bairro).toBe('ELDORADO DO SUL');
-    expect(p1.cidade).toBe('Porto Alegre');
-    expect(p1.setorAbastecimento).toBe('EBAT ILHA DA PINTADA/RES ILHA');
-    expect(p1.sistema).toBe('SAA - Ilha da Pintada');
-
-    expect(p2.bairro).toBe('ARQUIPÉLAGO');
-    expect(p2.setorAbastecimento).toBe('EBAT ILHAS (INLINE)');
-    expect(p2.sistema).toBe('SAA - Ilha da Pintada');
-  });
-
-  it('marca status "pending" quando o Placemark não tem coordenadas', async () => {
-    const h = await loadApp();
-    const kmlSemCoord = `<?xml version="1.0"?><kml><Document><Folder><name>X</name>
-      <Placemark><name>SEM_COORD</name><address>Rua Sem Coordenada, 1</address></Placemark>
-    </Folder></Document></kml>`;
-    const result = h.parseKMLText(kmlSemCoord, 'x.kml');
-    expect(result.X[0].status).toBe('pending');
-    expect(result.X[0].lat).toBeNull();
-  });
-
-  it('lança erro quando o KML não tem nenhuma pasta (Folder)', async () => {
-    const h = await loadApp();
-    const semFolder = `<?xml version="1.0"?><kml><Document></Document></kml>`;
-    expect(() => h.parseKMLText(semFolder, 'vazio.kml')).toThrow('Nenhuma pasta');
-  });
-
-  it('duas pastas com o MESMO nome dentro do MESMO arquivo recebem chaves distintas (sufixo do arquivo)', async () => {
-    const h = await loadApp();
-    const kmlComDuasPastasIguais = `<?xml version="1.0"?><kml><Document>
-      <Folder><name>ILHA</name>
-        <Placemark><name>A1</name><address>Rua A, 1</address>
-          <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
-        </Placemark>
-      </Folder>
-      <Folder><name>ILHA</name>
-        <Placemark><name>A2</name><address>Rua B, 2</address>
-          <Point><coordinates>-51.21,-29.91,0</coordinates></Point>
-        </Placemark>
-      </Folder>
-    </Document></kml>`;
-
-    const result = h.parseKMLText(kmlComDuasPastasIguais, 'duplicado.kml');
-    const keys = Object.keys(result);
-    expect(keys).toContain('ILHA');
-    expect(keys).toContain('ILHA (duplicado)');
-    expect(result['ILHA'][0].name).toBe('A1');
-    expect(result['ILHA (duplicado)'][0].name).toBe('A2');
-  });
-
-  it('[FIX] duas pastas com o mesmo nome vindas de ARQUIVOS diferentes NÃO se sobrescrevem mais: mergeRoutesFromFile desambigua com sufixo do arquivo', async () => {
-    const h = await loadApp();
-    const nr1 = h.parseKMLText(SAMPLE_KML(), 'arquivo1.kml');
-    const nr2 = h.parseKMLText(SAMPLE_KML(), 'arquivo2.kml'); // mesmo Folder "ILHA"
-
-    const merged = {};
-    h.mergeRoutesFromFile(merged, nr1, 'arquivo1.kml');
-    h.mergeRoutesFromFile(merged, nr2, 'arquivo2.kml');
-
-    expect(Object.keys(merged).sort()).toEqual(['ILHA', 'ILHA (arquivo2)']);
-    expect(merged['ILHA']).toHaveLength(2); // dados do arquivo1 preservados
-    expect(merged['ILHA (arquivo2)']).toHaveLength(2); // dados do arquivo2 preservados, não perdidos
-  });
-
-  it('mergeRoutesFromFile não desambigua quando não há colisão de nomes', async () => {
-    const h = await loadApp();
-    const nr1 = h.parseKMLText(SAMPLE_KML(), 'sul.kml'); // Folder "ILHA"
-    const kmlNorte = `<?xml version="1.0"?><kml><Document><Folder><name>NORTE</name>
-      <Placemark><name>N01</name><address>Rua Norte, 1</address>
-        <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
-    const nr2 = h.parseKMLText(kmlNorte, 'norte.kml');
-
-    const merged = {};
-    h.mergeRoutesFromFile(merged, nr1, 'sul.kml');
-    h.mergeRoutesFromFile(merged, nr2, 'norte.kml');
-
-    expect(Object.keys(merged).sort()).toEqual(['ILHA', 'NORTE']);
-  });
-
-  it('mergeRoutesFromFile lida com uma terceira colisão do mesmo nome (sufixo numerado)', async () => {
-    const h = await loadApp();
-    const merged = { ILHA: [{ name: 'original' }], 'ILHA (dup)': [{ name: 'segunda' }] };
-    const nr = h.parseKMLText(SAMPLE_KML(), 'dup.kml'); // vai gerar { ILHA: [...] }
-
-    h.mergeRoutesFromFile(merged, nr, 'dup.kml');
-
-    const keys = Object.keys(merged).sort();
-    expect(keys).toEqual(['ILHA', 'ILHA (dup 2)', 'ILHA (dup)']);
-    // nenhum dos roteiros anteriores foi perdido/sobrescrito
-    expect(merged['ILHA'][0].name).toBe('original');
-    expect(merged['ILHA (dup)'][0].name).toBe('segunda');
+  it('lança erro com a mensagem do corpo quando a resposta falha', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ message: 'RLS negou o acesso' }),
+    });
+    await expect(hooks.supabaseRequest('/rest/v1/route_points')).rejects.toThrow('RLS negou o acesso');
   });
 });
 
-describe('processKMLFiles (fluxo de importação via drag-and-drop / input file)', () => {
-  it('lê um arquivo .kml real (via FileReader) e popula routes + localStorage', async () => {
-    const h = await loadApp();
-    const file = makeFile(SAMPLE_KML(), 'ROTEIROS SUL.kml');
-
-    h.processKMLFiles([file]);
-    // FileReader é assíncrono mesmo em jsdom; aguarda o próximo tick(s)
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(h.state.routes.ILHA).toBeDefined();
-    expect(h.state.routes.ILHA).toHaveLength(2);
-    expect(h.state.loadedFileNames).toContain('ROTEIROS SUL.kml');
-    expect(localStorage.getItem(h.STORAGE_KEY)).not.toBeNull();
-
-    const saved = JSON.parse(localStorage.getItem(h.STORAGE_KEY));
-    expect(saved.routes.ILHA[0].setorAbastecimento).toBe('EBAT ILHA DA PINTADA/RES ILHA');
+describe('checkAuthorization', () => {
+  it('marca isAuthorizedUser=false quando não há sessão', async () => {
+    const result = await hooks.checkAuthorization();
+    expect(result).toBe(false);
+    expect(hooks.state.isAuthorizedUser).toBe(false);
   });
 
-  it('importa múltiplos arquivos .kml de uma vez, mesclando os roteiros', async () => {
-    const h = await loadApp();
-    const kml2 = `<?xml version="1.0"?><kml><Document><Folder><name>NORTE</name>
-      <Placemark><name>N01</name><address>Rua Norte, 1</address>
-        <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
+  it('marca isAuthorizedUser=true quando authorized_users retorna uma linha', async () => {
+    hooks.state.supabaseSession = { access_token: 'tok', user: { id: 'uuid-1' } };
+    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ([{ user_id: 'uuid-1' }]) });
+    const result = await hooks.checkAuthorization();
+    expect(result).toBe(true);
+    expect(hooks.state.isAuthorizedUser).toBe(true);
+  });
+});
 
-    h.processKMLFiles([makeFile(SAMPLE_KML(), 'sul.kml'), makeFile(kml2, 'norte.kml')]);
-    await new Promise(r => setTimeout(r, 50));
+describe('dbRowToPoint / pointToDbRow (round-trip)', () => {
+  it('preserva os campos ao converter camelCase <-> snake_case', () => {
+    // bairro/cidade/complemento foram removidos do modelo de ponto (não são
+    // mais lidos/gravados por dbRowToPoint/pointToDbRow), então não entram
+    // mais neste objeto de teste.
+    const point = {
+      name: 'I01', address: 'Rua X, 10', origAddress: 'Rua X, 10', mapsAddress: 'Rua X,, 10',
+      lat: -30.01, lng: -51.2, status: 'ok', corrected: false, isGeocodable: true,
+      description: 'desc', roteiro: 'I SUL', subRoteiro: 'I SUL I',
+      setorAbastecimento: 'EBAT X', sistema: 'SAA - X',
+    };
+    const row = hooks.pointToDbRow('ILHA', 0, point);
+    expect(row.route_key).toBe('ILHA');
+    expect(row.point_order).toBe(0);
+    expect(row.orig_address).toBe(point.origAddress);
+    expect(row.bairro).toBeUndefined();
+    expect(row.cidade).toBeUndefined();
+    expect(row.complemento).toBeUndefined();
 
-    expect(Object.keys(h.state.routes).sort()).toEqual(['ILHA', 'NORTE']);
+    const back = hooks.dbRowToPoint(row);
+    expect(back).toEqual(point);
+  });
+});
+
+describe('loadRoutesFromDB', () => {
+  it('não faz nada e avisa quando o usuário não é autorizado', async () => {
+    hooks.state.isAuthorizedUser = false;
+    const result = await hooks.loadRoutesFromDB();
+    expect(result).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('[FIX] processKMLFiles não perde mais um roteiro quando dois arquivos têm uma pasta com o mesmo nome', async () => {
-    const h = await loadApp();
-    // ambos os arquivos têm uma pasta "ILHA", mas com pontos diferentes
-    const kmlArquivo2 = `<?xml version="1.0"?><kml><Document><Folder><name>ILHA</name>
-      <Placemark><name>I99</name><address>Rua Outra Ilha, 99</address>
-        <Point><coordinates>-51.30,-29.80,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
+  it('agrupa route_points por route_key respeitando point_order e marca dataSource=db', async () => {
+    hooks.state.isAuthorizedUser = true;
+    hooks.state.supabaseSession = { access_token: 'tok', user: { id: 'uuid-1' } };
 
-    h.processKMLFiles([makeFile(SAMPLE_KML(), 'sul.kml'), makeFile(kmlArquivo2, 'extra.kml')]);
-    await new Promise(r => setTimeout(r, 50));
+    const rows = [
+      { route_key: 'ILHA', point_order: 0, name: 'I01', address: 'A', lat: -30, lng: -51, is_geocodable: true, corrected: false },
+      { route_key: 'ILHA', point_order: 1, name: 'I02', address: 'B', lat: -30.1, lng: -51.1, is_geocodable: true, corrected: false },
+    ];
+    global.fetch.mockImplementation(async url => {
+      if (url.includes('/rest/v1/route_points')) return { ok: true, status: 200, json: async () => rows };
+      if (url.includes('/rest/v1/dataset_meta')) return { ok: true, status: 200, json: async () => ([{ id: 1, saved_at: '2026-01-01T00:00:00Z', file_names: ['a.kml'] }]) };
+      return { ok: true, status: 200, json: async () => ([]) };
+    });
 
-    const keys = Object.keys(h.state.routes).sort();
-    expect(keys).toEqual(['ILHA', 'ILHA (extra)']);
-    expect(h.state.routes['ILHA']).toHaveLength(2); // I01, I02 (do sul.kml)
-    expect(h.state.routes['ILHA (extra)']).toHaveLength(1); // I99 (do extra.kml) — não foi perdido
+    const result = await hooks.loadRoutesFromDB();
+    expect(result).toBe(true);
+    expect(hooks.state.dataSource).toBe('db');
+    expect(hooks.state.routes.ILHA.map(p => p.name)).toEqual(['I01', 'I02']);
+  });
+});
+
+describe('saveRoutesToDB', () => {
+  it('rejeita quando o usuário não é autorizado', async () => {
+    hooks.state.isAuthorizedUser = false;
+    await expect(hooks.saveRoutesToDB()).rejects.toThrow(/autoriza/i);
+  });
+
+  it('faz DELETE seguido de POST (bulk insert) e upsert em dataset_meta', async () => {
+    hooks.state.isAuthorizedUser = true;
+    hooks.state.supabaseSession = { access_token: 'tok' };
+    hooks.state.routes = { ILHA: [{ name: 'I01', address: 'A', lat: -30, lng: -51 }] };
+    global.fetch.mockResolvedValue({ ok: true, status: 204 });
+
+    await hooks.saveRoutesToDB();
+
+    const methods = global.fetch.mock.calls.map(([, opts]) => opts.method);
+    expect(methods).toEqual(['DELETE', 'POST', 'POST']); // delete tudo, insere pontos, upsert meta
+  });
+});
+
+describe('exportJSON — bloqueado quando dataSource === "db"', () => {
+  it('não gera download e mostra aviso', () => {
+    hooks.state.dataSource = 'db';
+    hooks.state.routes = { ILHA: [{ name: 'I01' }] };
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL');
+    hooks.exportJSON();
+    expect(createObjectURLSpy).not.toHaveBeenCalled();
   });
 });
