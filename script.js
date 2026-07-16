@@ -493,7 +493,10 @@ const saveRouteKeysToDB = async (routeKeys) => {
  * (evita corrida/lost-update entre saves quase simultâneos) e acumula os route_keys
  * "sujos" enquanto uma sincronização está em andamento, rodando-os na sequência.
  */
-const syncQueue = { running: false, pendingKeys: new Set() };
+
+
+const syncQueue = { running: false, pendingKeys: new Set(), retryCount: new Map(), backoffTimer: null };
+const SYNC_RETRY_DELAY_MS = 3000; // espera antes de tentar de novo após uma falha
 
 const runSyncQueue = () => {
   if (syncQueue.running || !syncQueue.pendingKeys.size) return;
@@ -502,16 +505,32 @@ const runSyncQueue = () => {
   syncQueue.running = true;
   setSaveStatus('syncing');
   saveRouteKeysToDB(keysToSync)
-    .then(() => setSaveStatus('confirmed'))
+    .then(() => {
+      keysToSync.forEach(k => syncQueue.retryCount.delete(k));
+      setSaveStatus('confirmed');
+    })
     .catch(e => {
-      // Não pode perder a alteração: devolve os route_keys pra fila pra tentar de novo.
-      keysToSync.forEach(k => syncQueue.pendingKeys.add(k));
+      keysToSync.forEach(k => {
+        syncQueue.pendingKeys.add(k);
+        syncQueue.retryCount.set(k, (syncQueue.retryCount.get(k) || 0) + 1);
+      });
       setSaveStatus('failed', e.message);
       showToast('⚠️ NÃO salvo no banco — ' + e.message, 'error');
     })
     .finally(() => {
       syncQueue.running = false;
-      if (syncQueue.pendingKeys.size) runSyncQueue();
+      if (!syncQueue.pendingKeys.size) return;
+      // Se a última rodada falhou, espera antes de tentar de novo — evita martelar
+      // o banco/servidor em loop apertado numa falha persistente (ver observação
+      // do teste "queda de conexão"). Chaves novas acumuladas durante um sync
+      // bem-sucedido continuam sendo processadas na hora.
+      const lastRunFailed = Array.from(syncQueue.pendingKeys).some(k => syncQueue.retryCount.has(k));
+      if (lastRunFailed) {
+        clearTimeout(syncQueue.backoffTimer);
+        syncQueue.backoffTimer = setTimeout(runSyncQueue, SYNC_RETRY_DELAY_MS);
+      } else {
+        runSyncQueue();
+      }
     });
 };
 
