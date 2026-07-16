@@ -452,35 +452,98 @@ const loadRoutesFromDB = async () => {
   }
 };
 
-/** Reescreve por completo o conteúdo da tabela route_points/dataset_meta com o estado atual de `routes`. */
-const saveRoutesToDB = async () => {
+/**
+ * Sincroniza com o banco SOMENTE os route_key(s) informados — nunca o dataset inteiro.
+ * Usa a função RPC `save_routes_partial` (transação atômica no Postgres: DELETE + INSERT
+ * escopados aos route_keys, dentro da mesma transação). Depois confirma via GET/RPC de
+ * contagem que o banco realmente ficou com o número de linhas esperado antes de considerar
+ * a operação bem-sucedida.
+ */
+const saveRouteKeysToDB = async (routeKeys) => {
   if (!isAuthorizedUser) throw new Error('Usuário sem autorização de acesso ao banco.');
   if (!canWriteDB) throw new Error('Usuário com acesso somente leitura ao banco.');
+  if (!routeKeys || !routeKeys.length) return;
+
   const rows = [];
-  for (const [routeKey, pts] of Object.entries(routes)) {
-    pts.forEach((p, i) => rows.push(pointToDbRow(routeKey, i, p)));
-  }
-  await supabaseRequest('/rest/v1/route_points?route_key=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-  if (rows.length) {
-    await supabaseRequest('/rest/v1/route_points', { method: 'POST', body: rows, headers: { Prefer: 'return=minimal' } });
-  }
-  await supabaseRequest('/rest/v1/dataset_meta?on_conflict=id', {
-    method: 'POST',
-    body: { id: 1, saved_at: new Date().toISOString(), file_names: loadedFileNames },
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+  routeKeys.forEach(routeKey => {
+    (routes[routeKey] || []).forEach((p, i) => rows.push(pointToDbRow(routeKey, i, p)));
   });
-  showToast('💾 Roteiros salvos no banco', 'success');
+
+  await supabaseRequest('/rest/v1/rpc/save_routes_partial', {
+    method: 'POST',
+    body: { p_route_keys: routeKeys, p_route_points: rows, p_file_names: loadedFileNames },
+  });
+
+  // Verificação real pós-write: pergunta ao banco quantas linhas existem para
+  // exatamente esses route_keys e compara com o que devíamos ter mandado.
+  // Só depois disso a operação é considerada "salva".
+  const dbCount = await supabaseRequest('/rest/v1/rpc/count_route_points', {
+    method: 'POST',
+    body: { p_route_keys: routeKeys },
+  });
+  if (dbCount !== rows.length) {
+    throw new Error(`Verificação falhou: banco tem ${dbCount} linha(s) para ${routeKeys.length} roteiro(s), esperado ${rows.length}.`);
+  }
+
+  showToast(`💾 ${routeKeys.length === 1 ? 'Roteiro salvo' : routeKeys.length + ' roteiros salvos'} e confirmado(s) no banco`, 'success');
 };
 
-/** Chamado por saveToStorage(): só sincroniza com o banco se os dados atuais vieram de lá e o usuário tem permissão de escrita. */
-const maybeSyncRoutesToDB = () => {
+/**
+ * Fila de sincronização: garante que nunca haja duas escritas de banco em paralelo
+ * (evita corrida/lost-update entre saves quase simultâneos) e acumula os route_keys
+ * "sujos" enquanto uma sincronização está em andamento, rodando-os na sequência.
+ */
+const syncQueue = { running: false, pendingKeys: new Set() };
+
+const runSyncQueue = () => {
+  if (syncQueue.running || !syncQueue.pendingKeys.size) return;
+  const keysToSync = Array.from(syncQueue.pendingKeys);
+  syncQueue.pendingKeys.clear();
+  syncQueue.running = true;
+  setSaveStatus('syncing');
+  saveRouteKeysToDB(keysToSync)
+    .then(() => setSaveStatus('confirmed'))
+    .catch(e => {
+      // Não pode perder a alteração: devolve os route_keys pra fila pra tentar de novo.
+      keysToSync.forEach(k => syncQueue.pendingKeys.add(k));
+      setSaveStatus('failed', e.message);
+      showToast('⚠️ NÃO salvo no banco — ' + e.message, 'error');
+    })
+    .finally(() => {
+      syncQueue.running = false;
+      if (syncQueue.pendingKeys.size) runSyncQueue();
+    });
+};
+
+/** Chamado após um save explícito (botão): agenda a sincronização só dos route_key(s) tocados. */
+const syncRouteKeysToDB = (routeKeys) => {
   if (suppressDBSync || dataSource !== 'db' || !isAuthorizedUser || !supabaseSession) return;
   if (!canWriteDB) {
     showToast('👁️ Alteração salva só localmente — seu acesso ao banco é somente leitura.', 'info');
     return;
   }
-  saveRoutesToDB().catch(e => showToast('⚠️ Falha ao sincronizar com o banco: ' + e.message, 'error'));
+  const keys = (routeKeys || []).filter(Boolean);
+  if (!keys.length) return;
+  keys.forEach(k => syncQueue.pendingKeys.add(k));
+  runSyncQueue();
 };
+
+/** Atualiza o indicador visual de estado do banco (não mexe na badge de save local). */
+const setSaveStatus = (state, errMsg) => {
+  if (dataSource !== 'db') return;
+  const info = document.getElementById('saved-info');
+  if (!info) return;
+  info.classList.remove('success', 'error', 'warning');
+  if (state === 'syncing') { info.classList.add('warning'); info.textContent = '⏳ Salvando no banco…'; }
+  else if (state === 'confirmed') { info.classList.add('success'); info.textContent = `✓ Confirmado no banco · ${new Date().toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; }
+  else if (state === 'failed') { info.classList.add('error'); info.textContent = `✗ NÃO salvo no banco — ${errMsg || 'erro'}`; }
+};
+
+// Evita fechar/recarregar a aba com uma sincronização em andamento (perderia a alteração
+// no meio do caminho, o mesmo cenário do DELETE que abortou no seu HAR).
+window.addEventListener('beforeunload', e => {
+  if (syncQueue.running || syncQueue.pendingKeys.size) { e.preventDefault(); e.returnValue = ''; }
+});
 
 document.getElementById('db-toggle')?.addEventListener('change', async e => {
   setDBToggle(e.target.checked);
@@ -627,7 +690,9 @@ const tourDistanceKm = stops => {
 // ============================================================================
 const saveToStorage = () => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), fileNames: loadedFileNames, routes })); } catch (e) { }
-  maybeSyncRoutesToDB();
+  // A sincronização com o banco NÃO acontece mais aqui de forma implícita.
+  // Cada ação explícita de "salvar" chama syncRouteKeysToDB([...]) logo em seguida,
+  // só com o(s) route_key(s) que ela realmente tocou — nunca o dataset inteiro.
 };
 
 const loadFromStorage = () => {
@@ -740,6 +805,7 @@ const processKMLFiles = files => {
   const msg = document.getElementById('fi-msg');
   msg.textContent = `⏳ Lendo ${files.length} arquivo(s)…`;
   routes = {}; loadedFileNames = [];
+  dataSource = 'local'; // reimportar KML é sempre local; nunca deve sobrescrever o banco sem uma ação explícita de save
   let pending = files.length, totalRoutes = 0, errors = 0;
   files.forEach(file => {
     const r = new FileReader();
@@ -921,6 +987,7 @@ const syncPointsToRoute = () => {
   if (!currentRouteKey) return;
   routes[currentRouteKey] = points.map(p => ({ ...p }));
   saveToStorage();
+  syncRouteKeysToDB([currentRouteKey]);
 };
 
 const mkBadge = p => {
@@ -1108,6 +1175,7 @@ document.getElementById('btn-edit-save').onclick = async function () {
   points = editDraftPoints.map(p => ({ ...p }));
   if (currentRouteKey) routes[currentRouteKey] = points.map(p => ({ ...p }));
   saveToStorage();
+  if (currentRouteKey) syncRouteKeysToDB([currentRouteKey]);
   await trySaveLinkedFile();
   renderList();
   renderRouteButtons();
@@ -1349,6 +1417,7 @@ const geocodeMissingInRoutes = async (routeNames, progressCb) => {
   }
 
   saveToStorage();
+  syncRouteKeysToDB(routeNames);
   if (currentRouteKey && routeNames.includes(currentRouteKey)) {
     points = routes[currentRouteKey].map(p => ({ isGeocodable: true, ...p }));
     renderList();
@@ -1720,8 +1789,10 @@ document.getElementById('btn-del-route').onclick = function () {
   saveCustomRoutesToStorage();
   loadCustomSavedRouteOptions();
 
+  const deletedRouteKey = currentRouteKey;
   delete routes[currentRouteKey];
   saveToStorage();
+  syncRouteKeysToDB([deletedRouteKey]); // routes[deletedRouteKey] não existe mais -> RPC apaga sem reinserir
   renderRouteButtons();
 
   if (document.getElementById('rname-t').textContent === currentRouteKey) {
@@ -1769,6 +1840,7 @@ document.getElementById('panel-btn-save').onclick = function () {
   const virtualPts = customSelection.map(s => ({ isGeocodable: true, ...s.point, origAddress: s.point.origAddress || s.point.address }));
   routes[CUSTOM_ROUTE_PREFIX + name] = virtualPts;
   saveToStorage(); renderRouteButtons();
+  syncRouteKeysToDB([CUSTOM_ROUTE_PREFIX + name]);
   currentRouteKey = CUSTOM_ROUTE_PREFIX + name;
   refreshDeleteRouteButton();
 };
@@ -1784,7 +1856,7 @@ if (typeof window !== 'undefined') {
     haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
     saveToStorage, loadFromStorage, exportJSON, importFromJSON, applyLoadedRoutes,
     supabaseRequest, supabaseSignIn, supabaseSignOut, checkAuthorization, restoreSupabaseSession,
-    loadRoutesFromDB, saveRoutesToDB, maybeSyncRoutesToDB, dbRowToPoint, pointToDbRow,
+    loadRoutesFromDB, saveRouteKeysToDB, syncRouteKeysToDB, dbRowToPoint, pointToDbRow, syncQueue,
     setDBToggle, updateDBToggleUI, updateJsonExportButtonState, updateAuthUI,
     parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
     processKMLFiles, mergeRoutesFromFile,
