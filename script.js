@@ -243,6 +243,7 @@ const DB_TOGGLE_KEY = 'roteiros_db_toggle';
 
 let supabaseSession = null;  // { access_token, refresh_token, user, expires_at }
 let isAuthorizedUser = false;
+let canWriteDB = false;      // true só para authorized_users.can_write = true (RLS já bloqueia mesmo assim; isso só evita tentativas inúteis na UI)
 let dataSource = 'local';    // 'local' (KML/JSON manual) | 'db' (Supabase)
 let dbToggleOn = true;
 let suppressDBSync = false;  // evita reescrever o banco logo após lê-lo
@@ -315,7 +316,9 @@ const updateDBToggleUI = () => {
   if (checkbox) checkbox.checked = dbToggleOn;
   if (importBtn) importBtn.classList.toggle('db-mode-dimmed', dbToggleOn);
   const badge = document.getElementById('db-source-badge');
-  if (badge) badge.textContent = dataSource === 'db' ? '🔒 Roteiros carregados do banco (sigiloso)' : '';
+  if (badge) badge.textContent = dataSource === 'db'
+    ? (canWriteDB ? '🔒 Roteiros carregados do banco (sigiloso)' : '🔒👁️ Roteiros carregados do banco — acesso somente leitura')
+    : '';
 };
 
 const updateJsonExportButtonState = () => {
@@ -330,8 +333,11 @@ const updateAuthUI = () => {
   const logoutBtn = document.getElementById('btn-auth-logout');
   if (btn) {
     if (supabaseSession?.user) {
-      btn.textContent = isAuthorizedUser ? `🔓 ${supabaseSession.user.email}` : `⚠️ ${supabaseSession.user.email}`;
-      btn.title = isAuthorizedUser ? 'Autenticado com acesso ao banco' : 'Autenticado, mas sem autorização de acesso ao banco';
+      const roleIcon = isAuthorizedUser ? (canWriteDB ? '🔓' : '👁️') : '⚠️';
+      btn.textContent = `${roleIcon} ${supabaseSession.user.email}`;
+      btn.title = !isAuthorizedUser
+        ? 'Autenticado, mas sem autorização de acesso ao banco'
+        : (canWriteDB ? 'Autenticado com acesso de leitura e escrita ao banco' : 'Autenticado com acesso somente leitura ao banco');
     } else {
       btn.textContent = '🔐 Entrar';
       btn.title = '';
@@ -361,14 +367,16 @@ const pointToDbRow = (routeKey, order, p) => ({
   setor_abastecimento: p.setorAbastecimento ?? null, sistema: p.sistema ?? null,
 });
 
-/** Confere se o usuário logado está cadastrado em `authorized_users` (RLS decide o resto). */
+/** Confere se o usuário logado está cadastrado em `authorized_users` (RLS decide o resto) e se tem permissão de escrita. */
 const checkAuthorization = async () => {
-  if (!supabaseSession?.user?.id) { isAuthorizedUser = false; updateAuthUI(); return false; }
+  if (!supabaseSession?.user?.id) { isAuthorizedUser = false; canWriteDB = false; updateAuthUI(); return false; }
   try {
-    const rows = await supabaseRequest(`/rest/v1/authorized_users?select=user_id&user_id=eq.${supabaseSession.user.id}`);
+    const rows = await supabaseRequest(`/rest/v1/authorized_users?select=user_id,can_write&user_id=eq.${supabaseSession.user.id}`);
     isAuthorizedUser = Array.isArray(rows) && rows.length > 0;
+    canWriteDB = isAuthorizedUser && rows[0]?.can_write === true;
   } catch (e) {
     isAuthorizedUser = false;
+    canWriteDB = false;
   }
   updateAuthUI();
   return isAuthorizedUser;
@@ -385,7 +393,7 @@ const supabaseSignIn = async (email, password) => {
 
 const supabaseSignOut = async () => {
   try { if (supabaseSession?.access_token) await supabaseRequest('/auth/v1/logout', { method: 'POST' }); } catch (e) { }
-  supabaseSession = null; isAuthorizedUser = false;
+  supabaseSession = null; isAuthorizedUser = false; canWriteDB = false;
   persistSupabaseSession();
   if (dataSource === 'db') {
     routes = {}; loadedFileNames = []; dataSource = 'local';
@@ -447,6 +455,7 @@ const loadRoutesFromDB = async () => {
 /** Reescreve por completo o conteúdo da tabela route_points/dataset_meta com o estado atual de `routes`. */
 const saveRoutesToDB = async () => {
   if (!isAuthorizedUser) throw new Error('Usuário sem autorização de acesso ao banco.');
+  if (!canWriteDB) throw new Error('Usuário com acesso somente leitura ao banco.');
   const rows = [];
   for (const [routeKey, pts] of Object.entries(routes)) {
     pts.forEach((p, i) => rows.push(pointToDbRow(routeKey, i, p)));
@@ -463,9 +472,13 @@ const saveRoutesToDB = async () => {
   showToast('💾 Roteiros salvos no banco', 'success');
 };
 
-/** Chamado por saveToStorage(): só sincroniza com o banco se os dados atuais vieram de lá e o usuário é autorizado. */
+/** Chamado por saveToStorage(): só sincroniza com o banco se os dados atuais vieram de lá e o usuário tem permissão de escrita. */
 const maybeSyncRoutesToDB = () => {
   if (suppressDBSync || dataSource !== 'db' || !isAuthorizedUser || !supabaseSession) return;
+  if (!canWriteDB) {
+    showToast('👁️ Alteração salva só localmente — seu acesso ao banco é somente leitura.', 'info');
+    return;
+  }
   saveRoutesToDB().catch(e => showToast('⚠️ Falha ao sincronizar com o banco: ' + e.message, 'error'));
 };
 
@@ -491,9 +504,9 @@ document.getElementById('btn-auth-submit').onclick = async function () {
   document.getElementById('auth-result').textContent = 'Entrando…';
   try {
     await supabaseSignIn(email, password);
-    document.getElementById('auth-result').textContent = isAuthorizedUser
-      ? '✓ Login realizado com acesso ao banco.'
-      : '✓ Login realizado, mas este usuário não tem acesso ao banco de roteiros.';
+    document.getElementById('auth-result').textContent = !isAuthorizedUser
+      ? '✓ Login realizado, mas este usuário não tem acesso ao banco de roteiros.'
+      : (canWriteDB ? '✓ Login realizado com acesso de leitura e escrita ao banco.' : '✓ Login realizado com acesso somente leitura ao banco.');
     document.getElementById('auth-password').value = '';
     showToast('✓ Login realizado', 'success');
     setTimeout(() => document.getElementById('auth-box').classList.add('hidden'), 1200);
@@ -1790,6 +1803,7 @@ if (typeof window !== 'undefined') {
       get dataSource() { return dataSource; }, set dataSource(v) { dataSource = v; },
       get dbToggleOn() { return dbToggleOn; }, set dbToggleOn(v) { dbToggleOn = v; },
       get isAuthorizedUser() { return isAuthorizedUser; }, set isAuthorizedUser(v) { isAuthorizedUser = v; },
+      get canWriteDB() { return canWriteDB; }, set canWriteDB(v) { canWriteDB = v; },
       get supabaseSession() { return supabaseSession; }, set supabaseSession(v) { supabaseSession = v; },
       get suppressDBSync() { return suppressDBSync; }, set suppressDBSync(v) { suppressDBSync = v; },
       get points() { return points; }, set points(v) { points = v; },
