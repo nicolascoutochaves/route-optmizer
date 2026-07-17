@@ -143,14 +143,17 @@ const verifyPermission = async (handle, interactive = false, mode = 'read') => {
  * Usado tanto pelo fluxo principal (FSA handle) quanto pelo fallback (input file).
  * Lança erro se o JSON não tiver roteiros válidos.
  */
-const applyLoadedRoutes = (parsed, msgSuffix) => {
+const applyLoadedRoutes = (parsed, msgSuffix, source = 'local') => {
   if (!parsed.routes || !Object.keys(parsed.routes).length) throw new Error('JSON sem roteiros válidos');
+  dataSource = source; // 'local' (KML/JSON importado à mão) ou 'db' (Supabase)
   routes = parsed.routes;
   loadedFileNames = parsed.fileNames || [];
   saveToStorage();
   showSavedBar(parsed.savedAt || new Date().toISOString());
   renderLoadedFilesList(loadedFileNames);
   renderRouteButtons();
+  updateJsonExportButtonState();
+  updateDBToggleUI();
   document.getElementById('sec-routes').classList.remove('hidden');
   document.getElementById('fi-msg').textContent = `✓ ${Object.keys(routes).length} roteiro(s) carregados ${msgSuffix}`;
 };
@@ -195,6 +198,7 @@ const updateFSABar = filename => {
 };
 
 document.getElementById('btn-fsa-link').onclick = async () => {
+  setDBToggle(false); // importar manualmente sempre sai do modo "Carregar do Banco"
   if (!('showOpenFilePicker' in window)) {
     // Fallback: navegador sem suporte a File System Access API (Firefox, Safari).
     showToast('Seu navegador não suporta vínculo de arquivo. Importando em modo avulso…', 'info');
@@ -230,15 +234,384 @@ document.getElementById('btn-fsa-unlink').onclick = async () => {
 };
 
 // ============================================================================
+// SUPABASE — auth + persistência de roteiros no banco (via Vercel Serverless
+// Function, mesmo padrão já usado para o Mapbox em /api/request)
+// ============================================================================
+const SUPABASE_PROXY_URL = '/api/supabase'; // Vercel Serverless Function — ver api/supabase/[...path].js
+const SUPABASE_SESSION_KEY = 'roteiros_supabase_session';
+const DB_TOGGLE_KEY = 'roteiros_db_toggle';
+
+let supabaseSession = null;  // { access_token, refresh_token, user, expires_at }
+let isAuthorizedUser = false;
+let canWriteDB = false;      // true só para authorized_users.can_write = true (RLS já bloqueia mesmo assim; isso só evita tentativas inúteis na UI)
+let dataSource = 'local';    // 'local' (KML/JSON manual) | 'db' (Supabase)
+let dbToggleOn = true;
+let suppressDBSync = false;  // evita reescrever o banco logo após lê-lo
+
+/** Chamada genérica ao proxy do Supabase (REST/Auth). Lança erro com mensagem legível em caso de falha. */
+const supabaseRequest = async (path, { method = 'GET', body, headers = {}, auth = true } = {}) => {
+  const finalHeaders = { ...headers };
+  
+  // SÓ adiciona Content-Type se houver um corpo (ex: POST, PUT, DELETE, PATCH)
+  if (body !== undefined && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())) {
+    finalHeaders['Content-Type'] = 'application/json';
+  }
+  
+  // Garante que o access_token realmente existe e é válido antes de injetar
+  if (auth && supabaseSession?.access_token && supabaseSession.access_token !== 'undefined') {
+    finalHeaders['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+  }
+  
+  let res;
+  try {
+    const fetchOptions = { 
+      method, 
+      headers: finalHeaders 
+    };
+    
+    // Só anexa o body em requisições que aceitam body
+    if (body !== undefined && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())) {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    res = await fetch(`${SUPABASE_PROXY_URL}${path}`, fetchOptions);
+  } catch (e) {
+    throw new Error('Não foi possível contatar o servidor (proxy Supabase). Verifique sua conexão.');
+  }
+  
+  if (!res.ok) {
+    let msg = `Erro ${res.status}`;
+    try { 
+      const j = await res.json(); 
+      msg = j.error_description || j.msg || j.message || msg; 
+    } catch (e) { }
+    throw new Error(msg);
+  }
+  
+  if (res.status === 204) return null;
+  try { return await res.json(); } catch (e) { return null; }
+};
+
+const persistSupabaseSession = () => {
+  try {
+    if (supabaseSession) localStorage.setItem(SUPABASE_SESSION_KEY, JSON.stringify(supabaseSession));
+    else localStorage.removeItem(SUPABASE_SESSION_KEY);
+  } catch (e) { }
+};
+
+const persistDBToggle = () => {
+  try { localStorage.setItem(DB_TOGGLE_KEY, dbToggleOn ? '1' : '0'); } catch (e) { }
+};
+
+/** Liga/desliga o toggle "Carregar do Banco" e atualiza a UI relacionada. */
+const setDBToggle = on => {
+  dbToggleOn = !!on;
+  persistDBToggle();
+  updateDBToggleUI();
+};
+
+const updateDBToggleUI = () => {
+  const checkbox = document.getElementById('db-toggle');
+  const importBtn = document.getElementById('btn-fsa-link');
+  if (checkbox) checkbox.checked = dbToggleOn;
+  if (importBtn) importBtn.classList.toggle('db-mode-dimmed', dbToggleOn);
+  const badge = document.getElementById('db-source-badge');
+  if (badge) badge.textContent = dataSource === 'db'
+    ? (canWriteDB ? '🔒 Roteiros carregados do banco (sigiloso)' : '🔒👁️ Roteiros carregados do banco — acesso somente leitura')
+    : '';
+};
+
+const updateJsonExportButtonState = () => {
+  const btn = document.getElementById('btn-export-json');
+  if (!btn) return;
+  btn.disabled = dataSource === 'db';
+  btn.title = dataSource === 'db' ? 'Indisponível: roteiros sigilosos carregados do banco' : '';
+};
+
+const updateAuthUI = () => {
+  const btn = document.getElementById('btn-auth');
+  const logoutBtn = document.getElementById('btn-auth-logout');
+  if (btn) {
+    if (supabaseSession?.user) {
+      const roleIcon = isAuthorizedUser ? (canWriteDB ? '🔓' : '👁️') : '⚠️';
+      btn.textContent = `${roleIcon} ${supabaseSession.user.email}`;
+      btn.title = !isAuthorizedUser
+        ? 'Autenticado, mas sem autorização de acesso ao banco'
+        : (canWriteDB ? 'Autenticado com acesso de leitura e escrita ao banco' : 'Autenticado com acesso somente leitura ao banco');
+    } else {
+      btn.textContent = '🔐 Entrar';
+      btn.title = '';
+    }
+  }
+  if (logoutBtn) logoutBtn.classList.toggle('btn-hidden', !supabaseSession?.user);
+  updateDBToggleUI();
+  updateJsonExportButtonState();
+};
+
+/** Converte uma linha da tabela route_points (snake_case) para o formato de ponto usado no app (camelCase). */
+const dbRowToPoint = row => ({
+  name: row.name, address: row.address, origAddress: row.orig_address, mapsAddress: row.maps_address,
+  lat: row.lat, lng: row.lng, status: row.status, corrected: !!row.corrected,
+  isGeocodable: row.is_geocodable !== false, description: row.description,
+  roteiro: row.roteiro, subRoteiro: row.sub_roteiro,
+  setorAbastecimento: row.setor_abastecimento, sistema: row.sistema,
+});
+
+/** Converte um ponto do app (camelCase) para uma linha da tabela route_points (snake_case). */
+const pointToDbRow = (routeKey, order, p) => ({
+  route_key: routeKey, point_order: order,
+  name: p.name ?? null, address: p.address ?? null, orig_address: p.origAddress ?? null, maps_address: p.mapsAddress ?? null,
+  lat: p.lat ?? null, lng: p.lng ?? null, status: p.status ?? null, corrected: !!p.corrected,
+  is_geocodable: p.isGeocodable !== false, description: p.description ?? null,
+  roteiro: p.roteiro ?? null, sub_roteiro: p.subRoteiro ?? null,
+  setor_abastecimento: p.setorAbastecimento ?? null, sistema: p.sistema ?? null,
+});
+
+/** Confere se o usuário logado está cadastrado em `authorized_users` (RLS decide o resto) e se tem permissão de escrita. */
+const checkAuthorization = async () => {
+  if (!supabaseSession?.user?.id) { isAuthorizedUser = false; canWriteDB = false; updateAuthUI(); return false; }
+  try {
+    const rows = await supabaseRequest(`/rest/v1/authorized_users?select=user_id,can_write&user_id=eq.${supabaseSession.user.id}`);
+    isAuthorizedUser = Array.isArray(rows) && rows.length > 0;
+    canWriteDB = isAuthorizedUser && rows[0]?.can_write === true;
+  } catch (e) {
+    isAuthorizedUser = false;
+    canWriteDB = false;
+  }
+  updateAuthUI();
+  return isAuthorizedUser;
+};
+
+const supabaseSignIn = async (email, password) => {
+  const data = await supabaseRequest('/auth/v1/token?grant_type=password', { method: 'POST', auth: false, body: { email, password } });
+  supabaseSession = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user, expires_at: Date.now() + (data.expires_in || 3600) * 1000 };
+  persistSupabaseSession();
+  await checkAuthorization();
+  if (isAuthorizedUser && dbToggleOn) await loadRoutesFromDB();
+  return supabaseSession;
+};
+
+const supabaseSignOut = async () => {
+  try { if (supabaseSession?.access_token) await supabaseRequest('/auth/v1/logout', { method: 'POST' }); } catch (e) { }
+  supabaseSession = null; isAuthorizedUser = false; canWriteDB = false;
+  persistSupabaseSession();
+  if (dataSource === 'db') {
+    routes = {}; loadedFileNames = []; dataSource = 'local';
+    saveToStorage(); hideSavedBar(); renderLoadedFilesList([]);
+    ['sec-routes', 'sec-proc', 'sec-out'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+  }
+  updateAuthUI();
+};
+
+/** Restaura sessão salva (se houver) ao carregar a página. */
+const restoreSupabaseSession = async () => {
+  try {
+    const raw = localStorage.getItem(SUPABASE_SESSION_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s?.access_token) return false;
+    supabaseSession = s;
+    await checkAuthorization();
+    return true;
+  } catch (e) {
+    supabaseSession = null;
+    return false;
+  }
+};
+
+/** Busca todos os roteiros do banco e aplica ao estado do app (dataSource = 'db'). */
+const loadRoutesFromDB = async () => {
+  if (!isAuthorizedUser) { showToast('Você não tem acesso ao banco de roteiros.', 'error'); return false; }
+  document.getElementById('fi-msg').textContent = '⏳ Carregando roteiros do banco…';
+  try {
+    const [pointsRows, metaRows] = await Promise.all([
+      supabaseRequest('/rest/v1/route_points?select=*&order=route_key.asc,point_order.asc'),
+      supabaseRequest('/rest/v1/dataset_meta?select=*&id=eq.1'),
+    ]);
+    const grouped = {};
+    for (const row of (pointsRows || [])) {
+      (grouped[row.route_key] ||= []).push(dbRowToPoint(row));
+    }
+    const meta = (metaRows && metaRows[0]) || {};
+
+    suppressDBSync = true;
+    if (!Object.keys(grouped).length) {
+      routes = {}; loadedFileNames = meta.file_names || []; dataSource = 'db';
+      saveToStorage(); hideSavedBar(); renderLoadedFilesList(loadedFileNames);
+      document.getElementById('fi-msg').textContent = 'ℹ️ Banco conectado — nenhum roteiro cadastrado ainda.';
+    } else {
+      applyLoadedRoutes({ routes: grouped, fileNames: meta.file_names || [], savedAt: meta.saved_at }, 'do banco de dados', 'db');
+    }
+    suppressDBSync = false;
+
+    showToast('✓ Roteiros carregados do banco', 'success');
+    return true;
+  } catch (e) {
+    showToast('⚠️ Falha ao carregar do banco: ' + e.message, 'error');
+    return false;
+  }
+};
+
+/**
+ * Sincroniza com o banco SOMENTE os route_key(s) informados — nunca o dataset inteiro.
+ * Usa a função RPC `save_routes_partial` (transação atômica no Postgres: DELETE + INSERT
+ * escopados aos route_keys, dentro da mesma transação). Depois confirma via GET/RPC de
+ * contagem que o banco realmente ficou com o número de linhas esperado antes de considerar
+ * a operação bem-sucedida.
+ */
+const saveRouteKeysToDB = async (routeKeys) => {
+  if (!isAuthorizedUser) throw new Error('Usuário sem autorização de acesso ao banco.');
+  if (!canWriteDB) throw new Error('Usuário com acesso somente leitura ao banco.');
+  if (!routeKeys || !routeKeys.length) return;
+
+  const rows = [];
+  routeKeys.forEach(routeKey => {
+    (routes[routeKey] || []).forEach((p, i) => rows.push(pointToDbRow(routeKey, i, p)));
+  });
+
+  await supabaseRequest('/rest/v1/rpc/save_routes_partial', {
+    method: 'POST',
+    body: { p_route_keys: routeKeys, p_route_points: rows, p_file_names: loadedFileNames },
+  });
+
+  // Verificação real pós-write: pergunta ao banco quantas linhas existem para
+  // exatamente esses route_keys e compara com o que devíamos ter mandado.
+  // Só depois disso a operação é considerada "salva".
+  const dbCount = await supabaseRequest('/rest/v1/rpc/count_route_points', {
+    method: 'POST',
+    body: { p_route_keys: routeKeys },
+  });
+  if (dbCount !== rows.length) {
+    throw new Error(`Verificação falhou: banco tem ${dbCount} linha(s) para ${routeKeys.length} roteiro(s), esperado ${rows.length}.`);
+  }
+
+  showToast(`💾 ${routeKeys.length === 1 ? 'Roteiro salvo' : routeKeys.length + ' roteiros salvos'} e confirmado(s) no banco`, 'success');
+};
+
+/**
+ * Fila de sincronização: garante que nunca haja duas escritas de banco em paralelo
+ * (evita corrida/lost-update entre saves quase simultâneos) e acumula os route_keys
+ * "sujos" enquanto uma sincronização está em andamento, rodando-os na sequência.
+ */
+
+
+const syncQueue = { running: false, pendingKeys: new Set(), retryCount: new Map(), backoffTimer: null };
+const SYNC_RETRY_DELAY_MS = 3000; // espera antes de tentar de novo após uma falha
+
+const runSyncQueue = () => {
+  if (syncQueue.running || !syncQueue.pendingKeys.size) return;
+  const keysToSync = Array.from(syncQueue.pendingKeys);
+  syncQueue.pendingKeys.clear();
+  syncQueue.running = true;
+  setSaveStatus('syncing');
+  saveRouteKeysToDB(keysToSync)
+    .then(() => {
+      keysToSync.forEach(k => syncQueue.retryCount.delete(k));
+      setSaveStatus('confirmed');
+    })
+    .catch(e => {
+      keysToSync.forEach(k => {
+        syncQueue.pendingKeys.add(k);
+        syncQueue.retryCount.set(k, (syncQueue.retryCount.get(k) || 0) + 1);
+      });
+      setSaveStatus('failed', e.message);
+      showToast('⚠️ NÃO salvo no banco — ' + e.message, 'error');
+    })
+    .finally(() => {
+      syncQueue.running = false;
+      if (!syncQueue.pendingKeys.size) return;
+      // Se a última rodada falhou, espera antes de tentar de novo — evita martelar
+      // o banco/servidor em loop apertado numa falha persistente (ver observação
+      // do teste "queda de conexão"). Chaves novas acumuladas durante um sync
+      // bem-sucedido continuam sendo processadas na hora.
+      const lastRunFailed = Array.from(syncQueue.pendingKeys).some(k => syncQueue.retryCount.has(k));
+      if (lastRunFailed) {
+        clearTimeout(syncQueue.backoffTimer);
+        syncQueue.backoffTimer = setTimeout(runSyncQueue, SYNC_RETRY_DELAY_MS);
+      } else {
+        runSyncQueue();
+      }
+    });
+};
+
+/** Chamado após um save explícito (botão): agenda a sincronização só dos route_key(s) tocados. */
+const syncRouteKeysToDB = (routeKeys) => {
+  if (suppressDBSync || dataSource !== 'db' || !isAuthorizedUser || !supabaseSession) return;
+  if (!canWriteDB) {
+    showToast('👁️ Alteração salva só localmente — seu acesso ao banco é somente leitura.', 'info');
+    return;
+  }
+  const keys = (routeKeys || []).filter(Boolean);
+  if (!keys.length) return;
+  keys.forEach(k => syncQueue.pendingKeys.add(k));
+  runSyncQueue();
+};
+
+/** Atualiza o indicador visual de estado do banco (não mexe na badge de save local). */
+const setSaveStatus = (state, errMsg) => {
+  if (dataSource !== 'db') return;
+  const info = document.getElementById('saved-info');
+  if (!info) return;
+  info.classList.remove('success', 'error', 'warning');
+  if (state === 'syncing') { info.classList.add('warning'); info.textContent = '⏳ Salvando no banco…'; }
+  else if (state === 'confirmed') { info.classList.add('success'); info.textContent = `✓ Confirmado no banco · ${new Date().toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; }
+  else if (state === 'failed') { info.classList.add('error'); info.textContent = `✗ NÃO salvo no banco — ${errMsg || 'erro'}`; }
+};
+
+// Evita fechar/recarregar a aba com uma sincronização em andamento (perderia a alteração
+// no meio do caminho, o mesmo cenário do DELETE que abortou no seu HAR).
+window.addEventListener('beforeunload', e => {
+  if (syncQueue.running || syncQueue.pendingKeys.size) { e.preventDefault(); e.returnValue = ''; }
+});
+
+document.getElementById('db-toggle')?.addEventListener('change', async e => {
+  setDBToggle(e.target.checked);
+  if (dbToggleOn && isAuthorizedUser) await loadRoutesFromDB();
+});
+
+document.getElementById('btn-auth').onclick = () => {
+  document.getElementById('auth-box').classList.remove('hidden');
+  document.getElementById('auth-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('auth-result').textContent = '';
+  if (supabaseSession?.user) document.getElementById('auth-email').value = supabaseSession.user.email || '';
+};
+
+document.getElementById('btn-auth-cancel').onclick = () => document.getElementById('auth-box').classList.add('hidden');
+
+document.getElementById('btn-auth-submit').onclick = async function () {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if (!email || !password) { document.getElementById('auth-result').textContent = 'Preencha e-mail e senha.'; return; }
+  this.disabled = true;
+  document.getElementById('auth-result').textContent = 'Entrando…';
+  try {
+    await supabaseSignIn(email, password);
+    document.getElementById('auth-result').textContent = !isAuthorizedUser
+      ? '✓ Login realizado, mas este usuário não tem acesso ao banco de roteiros.'
+      : (canWriteDB ? '✓ Login realizado com acesso de leitura e escrita ao banco.' : '✓ Login realizado com acesso somente leitura ao banco.');
+    document.getElementById('auth-password').value = '';
+    showToast('✓ Login realizado', 'success');
+    setTimeout(() => document.getElementById('auth-box').classList.add('hidden'), 1200);
+  } catch (e) {
+    document.getElementById('auth-result').textContent = '⚠️ ' + e.message;
+  } finally {
+    this.disabled = false;
+  }
+};
+
+document.getElementById('btn-auth-logout').onclick = async () => {
+  await supabaseSignOut();
+  document.getElementById('auth-box').classList.add('hidden');
+  showToast('Sessão encerrada', 'info');
+};
+
+// ============================================================================
 // GEOCODING (via serverless function no Vercel — a chave Mapbox fica no servidor)
 // ============================================================================
 const geocodeMapbox = async query => {
   const q0 = (query || '').trim();
   if (!q0) return null;
 
-  // Chama a API local do Vercel passando o endereço como parâmetro.
-  // A chave do Mapbox nunca é exposta no client — fica configurada como
-  // variável de ambiente na serverless function.
   const url = `/api/request?query=${encodeURIComponent(q0)}`;
 
   let res;
@@ -257,7 +630,6 @@ const geocodeMapbox = async query => {
   }
 
   try {
-    // Retorna diretamente o objeto { lng, lat, label } processado pelo servidor
     return await res.json();
   } catch (e) {
     throw new Error('Resposta inválida do servidor de geocodificação.');
@@ -337,6 +709,9 @@ const tourDistanceKm = stops => {
 // ============================================================================
 const saveToStorage = () => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), fileNames: loadedFileNames, routes })); } catch (e) { }
+  // A sincronização com o banco NÃO acontece mais aqui de forma implícita.
+  // Cada ação explícita de "salvar" chama syncRouteKeysToDB([...]) logo em seguida,
+  // só com o(s) route_key(s) que ela realmente tocou — nunca o dataset inteiro.
 };
 
 const loadFromStorage = () => {
@@ -345,14 +720,19 @@ const loadFromStorage = () => {
     if (!raw) return false;
     const p = JSON.parse(raw);
     if (!p.routes || !Object.keys(p.routes).length) return false;
-    routes = p.routes; loadedFileNames = p.fileNames || [];
+    routes = p.routes; loadedFileNames = p.fileNames || []; dataSource = 'local';
     showSavedBar(p.savedAt); renderLoadedFilesList(loadedFileNames);
+    updateJsonExportButtonState(); updateDBToggleUI();
     document.getElementById('sec-routes').classList.remove('hidden');
     return true;
   } catch (e) { return false; }
 };
 
 const exportJSON = () => {
+  if (dataSource === 'db') {
+    showToast('⚠️ Exportação desabilitada: estes roteiros vieram do banco e são sigilosos.', 'error');
+    return;
+  }
   const blob = new Blob([JSON.stringify({ savedAt: new Date().toISOString(), fileNames: loadedFileNames, routes }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = 'roteiros.json'; a.click();
@@ -392,11 +772,12 @@ const renderLoadedFilesList = names => {
 
 document.getElementById('btn-export-json').onclick = exportJSON;
 document.getElementById('btn-clear-storage').onclick = () => {
-  localStorage.removeItem(STORAGE_KEY); routes = {}; loadedFileNames = [];
+  localStorage.removeItem(STORAGE_KEY); routes = {}; loadedFileNames = []; dataSource = 'local';
   hideSavedBar(); renderLoadedFilesList([]);
   document.getElementById('fi-msg').textContent = '🗑️ Dados removidos. Carregue os KMLs novamente.';
   ['sec-routes', 'sec-proc', 'sec-out'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('fi').value = '';
+  updateJsonExportButtonState(); updateDBToggleUI();
   showToast('Dados removidos', 'info');
 };
 
@@ -443,6 +824,7 @@ const processKMLFiles = files => {
   const msg = document.getElementById('fi-msg');
   msg.textContent = `⏳ Lendo ${files.length} arquivo(s)…`;
   routes = {}; loadedFileNames = [];
+  dataSource = 'local'; // reimportar KML é sempre local; nunca deve sobrescrever o banco sem uma ação explícita de save
   let pending = files.length, totalRoutes = 0, errors = 0;
   files.forEach(file => {
     const r = new FileReader();
@@ -504,13 +886,9 @@ const parseKMLText = (xml, fname) => {
         status: (lat !== null && lng !== null) ? 'ok' : 'pending',
         corrected: false,
         isGeocodable: true,
-        // NOVOS CAMPOS:
         description,
         roteiro: extData['ROTEIRO'] || '',
         subRoteiro: extData['SUB-ROTEIRO'] || '',
-        bairro: extData['BAIRRO'] || '',
-        cidade: extData['CIDADE'] || '',
-        complemento: extData['COMPLEMENTO'] || '',
         setorAbastecimento: extData['SETOR ABASTECIMENTO'] || '',
         sistema: extData['SISTEMA'] || ''
       });
@@ -561,28 +939,40 @@ const renderRouteButtons = () => {
 // INIT — File System Access API com fallback para localStorage
 // ============================================================================
 window.addEventListener('DOMContentLoaded', async () => {
-  try {
-    let loaded = false;
-    const handle = await loadHandleFromDB();
-    if (handle) {
-      if (await verifyPermission(handle, false)) {
-        loaded = await readFromHandle(handle);
-      } else {
-        // Permissão expirou — o usuário precisa clicar "Recarregar" para concedê-la novamente
-        updateFSABar(handle.name);
-        document.getElementById('fi-msg').textContent = '⚠️ Clique em "🔄 Recarregar" para atualizar os dados do arquivo vinculado.';
+  try { dbToggleOn = localStorage.getItem(DB_TOGGLE_KEY) !== '0'; } catch (e) { dbToggleOn = true; }
+  updateDBToggleUI();
+
+  await restoreSupabaseSession();
+  updateAuthUI();
+
+  let loadedFromDB = false;
+  if (dbToggleOn && isAuthorizedUser) {
+    loadedFromDB = await loadRoutesFromDB();
+  }
+
+  if (!loadedFromDB) {
+    try {
+      let loaded = false;
+      const handle = await loadHandleFromDB();
+      if (handle) {
+        if (await verifyPermission(handle, false)) {
+          loaded = await readFromHandle(handle);
+        } else {
+          updateFSABar(handle.name);
+          document.getElementById('fi-msg').textContent = '⚠️ Clique em "🔄 Recarregar" para atualizar os dados do arquivo vinculado.';
+        }
       }
-    }
-    if (!loaded && loadFromStorage()) {
-      renderRouteButtons();
-      document.getElementById('sec-routes').classList.remove('hidden');
-      showToast(`✓ ${Object.keys(routes).length} roteiro(s) restaurados do cache`, 'info');
-    }
-  } catch (e) {
-    console.error('[init]', e);
-    if (loadFromStorage()) {
-      renderRouteButtons();
-      document.getElementById('sec-routes').classList.remove('hidden');
+      if (!loaded && loadFromStorage()) {
+        renderRouteButtons();
+        document.getElementById('sec-routes').classList.remove('hidden');
+        showToast(`✓ ${Object.keys(routes).length} roteiro(s) restaurados do cache`, 'info');
+      }
+    } catch (e) {
+      console.error('[init]', e);
+      if (loadFromStorage()) {
+        renderRouteButtons();
+        document.getElementById('sec-routes').classList.remove('hidden');
+      }
     }
   }
   loadCustomSavedRoutes();
@@ -601,7 +991,6 @@ const selectRoute = (name, btn) => {
   renderList();
   document.getElementById('sec-proc').classList.remove('hidden');
   document.getElementById('sec-out').classList.add('hidden');
-  document.getElementById('fix-box').classList.add('hidden');
   document.getElementById('edit-panel').classList.add('hidden');
   document.getElementById('pbar').classList.add('hidden');
   document.getElementById('ptxt').textContent = '';
@@ -617,6 +1006,7 @@ const syncPointsToRoute = () => {
   if (!currentRouteKey) return;
   routes[currentRouteKey] = points.map(p => ({ ...p }));
   saveToStorage();
+  syncRouteKeysToDB([currentRouteKey]);
 };
 
 const mkBadge = p => {
@@ -671,73 +1061,15 @@ const renderList = () => {
   points.forEach((p, i) => {
     const row = document.createElement('div');
     row.className = 'row'; row.id = 'r' + i;
-    row.onclick = () => openFix(i);
     c.appendChild(row); updateRow(i);
   });
   document.getElementById('btn-save-drag-order').classList.toggle('hidden', points.length === 0);
 };
 
 // ============================================================================
-// FIX BOX (correção manual de endereço/coordenada)
-// ============================================================================
-const openFix = i => {
-  if (i == null || !points[i]) return;
-  selectedIdx = i;
-  points.forEach((_, j) => updateRow(j));
-  const p = points[i];
-  document.getElementById('fix-pname').textContent = p.name;
-  document.getElementById('fix-orig').textContent = p.origAddress || p.address || '(sem endereço)';
-  document.getElementById('fix-input').value = formatAddr(p.origAddress || p.address || '');
-  document.getElementById('fix-result').textContent = '';
-  document.getElementById('fix-result').style.color = '';
-  document.getElementById('fix-box').classList.remove('hidden');
-  document.getElementById('fix-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-};
-
-document.getElementById('btn-fix-cancel').onclick = () => {
-  selectedIdx = -1;
-  points.forEach((_, j) => updateRow(j));
-  document.getElementById('fix-box').classList.add('hidden');
-};
-
-document.getElementById('btn-fix-geo').onclick = async function () {
-  this.disabled = true;
-  const inp = document.getElementById('fix-input').value.trim();
-  const res = document.getElementById('fix-result');
-  res.style.color = '';
-
-  if (!inp) { res.textContent = 'Digite um endereço.'; this.disabled = false; return; }
-  if (selectedIdx < 0 || !points[selectedIdx]) {
-    res.style.color = 'var(--color-error)'; res.textContent = 'Nenhum ponto selecionado.'; this.disabled = false; return;
-  }
-
-  res.textContent = 'Geocodificando...';
-  try {
-    const r = await geocodeMapbox(inp);
-    if (r) {
-      points[selectedIdx] = { ...points[selectedIdx], lat: r.lat, lng: r.lng, address: inp, mapsAddress: formatAddr(inp), status: 'ok', corrected: true };
-      updateRow(selectedIdx);
-      syncPointsToRoute();
-      res.style.color = 'var(--color-success)';
-      res.textContent = '✓ Reposicionado → ' + r.label;
-      if (geocodeDone && startCoord) await buildOutputs();
-    } else {
-      res.style.color = 'var(--color-error)';
-      res.textContent = 'Não encontrado. Tente: Rua, número, bairro, Porto Alegre.';
-    }
-  } catch (e) {
-    res.style.color = 'var(--color-error)';
-    res.textContent = 'Erro: ' + e.message;
-    showToast(e.message, 'error');
-  }
-  this.disabled = false;
-};
-
-// ============================================================================
 // EDITOR DE PONTOS DO ROTEIRO (nome, endereço, lat/lng, travar coordenadas)
 // ============================================================================
 const openEditPanel = () => {
-  // Cria uma cópia de trabalho — só é aplicada de volta a `points`/`routes` ao salvar.
   editDraftPoints = points.map(p => ({ ...p, isGeocodable: p.isGeocodable !== false }));
   renderEditRows();
   const status = document.getElementById('edit-status');
@@ -798,10 +1130,6 @@ const buildEditRow = (p, idx) => {
     renderEditRows();
   };
 
-  // Permite colar "lat, lng" (formato copiado do Google Maps) diretamente no campo
-  // Latitude, preenchendo automaticamente os dois campos (lat e lng).
-  // Usa o evento 'input' (em vez de 'paste') para funcionar de forma confiável
-  // em qualquer navegador/dispositivo, inclusive celular.
   const latInput = row.querySelector('.edit-lat');
   const lngInput = row.querySelector('.edit-lng');
   const lockInput = row.querySelector('.edit-lock');
@@ -844,14 +1172,11 @@ const collectEditRowsIntoDraft = () => {
     p.isGeocodable = !row.querySelector('.edit-lock').checked;
     p.mapsAddress = p.mapsAddress || formatAddr(p.address);
     p.status = (p.lat !== null && p.lng !== null) ? 'ok' : (p.address ? 'pending' : 'error');
-    // Coordenada travada e presente conta como "corrigida manualmente" para fins visuais
     if (p.isGeocodable === false && p.lat !== null && p.lng !== null) p.corrected = true;
   });
 };
 
 document.getElementById('btn-edit-add').onclick = () => {
-  // Novo ponto "hardcoded": nasce com coordenadas travadas por padrão,
-  // já que o usuário está inserindo lat/lng manualmente.
   editDraftPoints.push({
     name: '', address: '', origAddress: '', mapsAddress: '',
     lat: null, lng: null, status: 'pending', corrected: false, isGeocodable: false
@@ -869,6 +1194,7 @@ document.getElementById('btn-edit-save').onclick = async function () {
   points = editDraftPoints.map(p => ({ ...p }));
   if (currentRouteKey) routes[currentRouteKey] = points.map(p => ({ ...p }));
   saveToStorage();
+  if (currentRouteKey) syncRouteKeysToDB([currentRouteKey]);
   await trySaveLinkedFile();
   renderList();
   renderRouteButtons();
@@ -877,7 +1203,6 @@ document.getElementById('btn-edit-save').onclick = async function () {
   status.style.color = 'var(--color-success)';
   status.textContent = '✓ Alterações salvas no roteiro.';
   showToast('✓ Roteiro atualizado', 'success');
-  // Coordenadas podem ter mudado — força novo cálculo antes de gerar link/otimizar de novo
   geocodeDone = false; isOptimized = false;
   this.disabled = false;
 };
@@ -1129,13 +1454,9 @@ const geocodeAllPoints = async () => {
   for (let i = 0; i < total; i++) {
     const p = points[i];
     if (p.isGeocodable === false) {
-      // Ponto com coordenadas travadas: nunca chama a API de geocodificação.
       p.status = (p.lat !== null && p.lng !== null) ? 'ok' : 'error';
       ptxt.textContent = `${i + 1}/${total} — ${p.name} (🔒 coordenadas travadas)`;
-    } /* else if (p.lat !== null && p.lng !== null) {
-      p.status = 'ok';
-      ptxt.textContent = `${i + 1}/${total} — ${p.name} (coord. existente)`;
-    } */ else if (!p.address) {
+    } else if (!p.address) {
       p.status = 'error';
     } else {
       ptxt.textContent = `Geocodificando ${i + 1}/${total} — ${p.name}…`;
@@ -1165,7 +1486,7 @@ const geocodeMissingInRoutes = async (routeNames, progressCb) => {
   const targets = [];
   routeNames.forEach(name => {
     (routes[name] || []).forEach((p, idx) => {
-      if (p.isGeocodable === false) return; // travado, nunca geocodificar
+      if (p.isGeocodable === false) return;
       const hasCoord = p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined && !isNaN(p.lat) && !isNaN(p.lng);
       if (hasCoord || !p.address) return;
       targets.push({ name, idx });
@@ -1185,7 +1506,7 @@ const geocodeMissingInRoutes = async (routeNames, progressCb) => {
   }
 
   saveToStorage();
-  // Se o roteiro atualmente aberto foi afetado, atualiza a cópia de trabalho `points`
+  syncRouteKeysToDB(routeNames);
   if (currentRouteKey && routeNames.includes(currentRouteKey)) {
     points = routes[currentRouteKey].map(p => ({ isGeocodable: true, ...p }));
     renderList();
@@ -1429,11 +1750,6 @@ const setPanelStatus = (msg, type) => {
   el.style.color = type === 'error' ? 'var(--color-error)' : type === 'success' ? 'var(--color-success)' : 'var(--color-text-secondary)';
 };
 
-// BUG CORRIGIDO: antes, se todos os pontos selecionados já tinham coordenadas,
-// a função retornava sem nunca chamar ensureStartCoord(), e um clique em
-// "Gerar link"/"Otimizar" sem ter passado pelo fluxo principal antes quebrava
-// (startCoord ficava null e buildGoogleMapsUrl acessava .lat de null).
-// Agora a base é sempre geocodificada primeiro.
 const geocodeCustomSelectionPoints = async () => {
   const status = document.getElementById('panel-status');
   try { await ensureStartCoord(); } catch (e) { setPanelStatus(e.message, 'error'); return false; }
@@ -1448,7 +1764,6 @@ const geocodeCustomSelectionPoints = async () => {
   for (let i = 0; i < customSelection.length; i++) {
     const sel = customSelection[i], p = sel.point;
     if (p.isGeocodable === false) {
-      // Ponto com coordenadas travadas: nunca chama a API de geocodificação.
       p.status = (p.lat !== null && p.lng !== null) ? 'ok' : 'error';
       fill.style.width = Math.round((i + 1) / customSelection.length * 100) + '%';
       continue;
@@ -1563,8 +1878,10 @@ document.getElementById('btn-del-route').onclick = function () {
   saveCustomRoutesToStorage();
   loadCustomSavedRouteOptions();
 
+  const deletedRouteKey = currentRouteKey;
   delete routes[currentRouteKey];
   saveToStorage();
+  syncRouteKeysToDB([deletedRouteKey]); // routes[deletedRouteKey] não existe mais -> RPC apaga sem reinserir
   renderRouteButtons();
 
   if (document.getElementById('rname-t').textContent === currentRouteKey) {
@@ -1612,6 +1929,7 @@ document.getElementById('panel-btn-save').onclick = function () {
   const virtualPts = customSelection.map(s => ({ isGeocodable: true, ...s.point, origAddress: s.point.origAddress || s.point.address }));
   routes[CUSTOM_ROUTE_PREFIX + name] = virtualPts;
   saveToStorage(); renderRouteButtons();
+  syncRouteKeysToDB([CUSTOM_ROUTE_PREFIX + name]);
   currentRouteKey = CUSTOM_ROUTE_PREFIX + name;
   refreshDeleteRouteButton();
 };
@@ -1619,43 +1937,36 @@ document.getElementById('panel-btn-save').onclick = function () {
 
 // ============================================================================
 // TEST HOOKS
-// Bloco inofensivo para produção: apenas expõe, em `window.__testHooks`, as
-// funções e o estado interno do módulo para que os testes automatizados
-// consigam chamá-los diretamente (o script não usa `export`/módulos ES).
-// Nada aqui altera comportamento — é só uma "porta dos fundos" de leitura/escrita
-// para o ambiente de testes.
 // ============================================================================
 if (typeof window !== 'undefined') {
   window.__testHooks = {
-    // utils
     escXML, titleCasePt, formatAddr,
-    // geocoding
     geocodeMapbox, ensureStartCoord,
-    // tsp / distância
     haversine, buildDistMatrix, nearestNeighbor, twoOpt, solveTSP, tourDistanceKm,
-    // persistência json
     saveToStorage, loadFromStorage, exportJSON, importFromJSON, applyLoadedRoutes,
-    // kml
+    supabaseRequest, supabaseSignIn, supabaseSignOut, checkAuthorization, restoreSupabaseSession,
+    loadRoutesFromDB, saveRouteKeysToDB, syncRouteKeysToDB, dbRowToPoint, pointToDbRow, syncQueue,
+    setDBToggle, updateDBToggleUI, updateJsonExportButtonState, updateAuthUI,
     parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
     processKMLFiles, mergeRoutesFromFile,
-    // links / qr
     buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
-    // roteiro (grid principal)
-    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow, openFix,
-    // edição de pontos
+    renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow,
     openEditPanel, closeEditPanel, renderEditRows, collectEditRowsIntoDraft, buildEditRow,
-    // painel personalizar (custom)
     openCustomPanel, closeCustomPanel, togglePointSelection, selectAllPoints, unselectAllPoints,
     isPointSelected, geocodeCustomSelectionPoints, finishPanelLink, renderPanelPoints,
     renderPanelSelectedList, renderPanelRouteTabs,
-    // roteiros personalizados salvos (CRUD)
     isCustomRouteKey, getCustomRouteName, loadCustomSavedRoutes, saveCustomRoutesToStorage,
     loadCustomSavedRouteOptions, refreshDeleteRouteButton,
-    // constantes
     CUSTOM_ROUTE_PREFIX, STORAGE_KEY, CUSTOM_LS_KEY, START_END,
-    // acesso ao estado interno (getters/setters) — necessário pois são `let` no escopo do módulo
+    SUPABASE_PROXY_URL, SUPABASE_SESSION_KEY, DB_TOGGLE_KEY,
     state: {
       get routes() { return routes; }, set routes(v) { routes = v; },
+      get dataSource() { return dataSource; }, set dataSource(v) { dataSource = v; },
+      get dbToggleOn() { return dbToggleOn; }, set dbToggleOn(v) { dbToggleOn = v; },
+      get isAuthorizedUser() { return isAuthorizedUser; }, set isAuthorizedUser(v) { isAuthorizedUser = v; },
+      get canWriteDB() { return canWriteDB; }, set canWriteDB(v) { canWriteDB = v; },
+      get supabaseSession() { return supabaseSession; }, set supabaseSession(v) { supabaseSession = v; },
+      get suppressDBSync() { return suppressDBSync; }, set suppressDBSync(v) { suppressDBSync = v; },
       get points() { return points; }, set points(v) { points = v; },
       get startCoord() { return startCoord; }, set startCoord(v) { startCoord = v; },
       get currentRoute() { return currentRoute; }, set currentRoute(v) { currentRoute = v; },

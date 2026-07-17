@@ -3,7 +3,7 @@
 const CACHE_VERSION = "roteiros-v1";
 
 const CORE_ASSETS = [
-  "./Otimizador_de_Roteiros.html",
+  "./index.html",
   "./tutoriais.html",
   "./ajuda/ajuda_rapida.html",
   "./style.css",
@@ -57,6 +57,6 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE_VERSION).then((cache) => cache.put(req, resClone));
         return res;
       })
-      .catch(() => caches.match(req).then((cached) => cached || caches.match("./Otimizador_de_Roteiros.html")))
+      .catch(() => caches.match(req).then((cached) => cached || caches.match("./index.html")))
   );
 });
