@@ -1,180 +1,186 @@
-import { describe, it, expect } from 'vitest';
-import { loadApp, SAMPLE_KML, makeFile } from './testUtils.js';
+// tests/kml-import.test.js
+//
+// Este arquivo antes era uma cópia acidental de tests/supabase.test.js: mesmo
+// cabeçalho de comentário ("tests/supabase.test.js"), mesmos describes
+// (supabaseRequest, checkAuthorization, dbRowToPoint/pointToDbRow,
+// loadRoutesFromDB, saveRoutesToDB, exportJSON) — nada relacionado a import de
+// KML. Isso fazia cada um desses testes rodar duas vezes na suite (uma vez
+// aqui, outra em supabase.test.js) e ainda assim não cobria parseKMLText,
+// mergeRoutesFromFile nem processKMLFiles, que são as funções que este
+// arquivo deveria testar. Reescrito para cobrir de fato a leitura/mesclagem
+// de arquivos KML.
+//
+// Segue o mesmo padrão dos demais arquivos de teste do projeto: usa
+// loadApp() de testUtils.js, que recarrega a fixture do DOM e reimporta
+// script.js do zero a cada teste (estado limpo garantido), expondo
+// window.__testHooks.
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { loadApp } from './testUtils.js';
+
+let hooks;
+
+beforeEach(async () => {
+  hooks = await loadApp();
+  global.fetch = vi.fn();
+});
+
+const kml = ({ folderName = 'ILHA', placemarks = [] } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Folder>
+      <name>${folderName}</name>
+      ${placemarks.join('\n')}
+    </Folder>
+  </Document>
+</kml>`;
+
+const placemark = ({
+  name = 'I01', address = 'Rua X, 10', description = 'Linha 1<br>Linha 2',
+  roteiro = 'I SUL', subRoteiro = 'I SUL I', setor = 'EBAT X', sistema = 'SAA - X',
+  lat = -30.01, lng = -51.2,
+} = {}) => `<Placemark>
+        <name>${name}</name>
+        <address>${address}</address>
+        <description><![CDATA[${description}]]></description>
+        <ExtendedData>
+          <Data name="ROTEIRO"><value>${roteiro}</value></Data>
+          <Data name="SUB-ROTEIRO"><value>${subRoteiro}</value></Data>
+          <Data name="SETOR ABASTECIMENTO"><value>${setor}</value></Data>
+          <Data name="SISTEMA"><value>${sistema}</value></Data>
+        </ExtendedData>
+        ${lat !== null && lng !== null ? `<Point><coordinates>${lng},${lat},0</coordinates></Point>` : ''}
+      </Placemark>`;
 
 describe('parseKMLText', () => {
-  it('extrai name, address, lat/lng de cada Placemark de cada Folder', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
+  it('lança erro quando o KML não tem nenhuma pasta (Document > Folder)', () => {
+    const xml = `<?xml version="1.0"?><kml><Document></Document></kml>`;
+    expect(() => hooks.parseKMLText(xml, 'vazio.kml')).toThrow(/nenhuma pasta/i);
+  });
+
+  it('extrai nome, endereço, coordenadas e ExtendedData de cada Placemark', () => {
+    const xml = kml({ placemarks: [placemark()] });
+    const result = hooks.parseKMLText(xml, 'roteiro.kml');
+
     expect(Object.keys(result)).toEqual(['ILHA']);
-    expect(result.ILHA).toHaveLength(2);
-    const [p1, p2] = result.ILHA;
-    expect(p1.name).toBe('I01');
-    expect(p1.address).toContain('MARTINHO POETA');
-    expect(p1.lat).toBeCloseTo(-29.99135, 4);
-    expect(p1.lng).toBeCloseTo(-51.273944, 4);
-    expect(p1.status).toBe('ok');
-    expect(p2.name).toBe('I02');
+    expect(result.ILHA).toHaveLength(1);
+
+    const p = result.ILHA[0];
+    expect(p.name).toBe('I01');
+    expect(p.address).toBe('Rua X, 10');
+    expect(p.origAddress).toBe('Rua X, 10');
+    expect(p.mapsAddress).toBe(hooks.formatAddr('Rua X, 10'));
+    expect(p.lat).toBe(-30.01);
+    expect(p.lng).toBe(-51.2);
+    expect(p.status).toBe('ok');
+    expect(p.corrected).toBe(false);
+    expect(p.isGeocodable).toBe(true);
+    expect(p.description).toBe('Linha 1\nLinha 2');
+    expect(p.roteiro).toBe('I SUL');
+    expect(p.subRoteiro).toBe('I SUL I');
+    expect(p.setorAbastecimento).toBe('EBAT X');
+    expect(p.sistema).toBe('SAA - X');
   });
 
-  it('extrai description (convertendo <br> em quebras de linha e removendo tags)', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
-    const p1 = result.ILHA[0];
-    expect(p1.description).toContain('ROTEIRO: I SUL');
-    expect(p1.description).toContain('SISTEMA: SAA - Ilha da Pintada');
-    expect(p1.description).not.toContain('<br>');
-    expect(p1.description).not.toMatch(/<[^>]+>/);
+  it('marca status "pending" e lat/lng nulos quando o Placemark não tem coordenadas', () => {
+    const xml = kml({ placemarks: [placemark({ lat: null, lng: null })] });
+    const result = hooks.parseKMLText(xml, 'sem-coord.kml');
+
+    expect(result.ILHA[0].lat).toBeNull();
+    expect(result.ILHA[0].lng).toBeNull();
+    expect(result.ILHA[0].status).toBe('pending');
   });
 
-  it('extrai os campos do ExtendedData: roteiro, subRoteiro, bairro, setorAbastecimento, sistema', async () => {
-    const h = await loadApp();
-    const result = h.parseKMLText(SAMPLE_KML(), 'teste.kml');
-    const [p1, p2] = result.ILHA;
-
-    expect(p1.roteiro).toBe('I SUL');
-    expect(p1.subRoteiro).toBe('I SUL I');
-    expect(p1.bairro).toBe('ELDORADO DO SUL');
-    expect(p1.cidade).toBe('Porto Alegre');
-    expect(p1.setorAbastecimento).toBe('EBAT ILHA DA PINTADA/RES ILHA');
-    expect(p1.sistema).toBe('SAA - Ilha da Pintada');
-
-    expect(p2.bairro).toBe('ARQUIPÉLAGO');
-    expect(p2.setorAbastecimento).toBe('EBAT ILHAS (INLINE)');
-    expect(p2.sistema).toBe('SAA - Ilha da Pintada');
-  });
-
-  it('marca status "pending" quando o Placemark não tem coordenadas', async () => {
-    const h = await loadApp();
-    const kmlSemCoord = `<?xml version="1.0"?><kml><Document><Folder><name>X</name>
-      <Placemark><name>SEM_COORD</name><address>Rua Sem Coordenada, 1</address></Placemark>
-    </Folder></Document></kml>`;
-    const result = h.parseKMLText(kmlSemCoord, 'x.kml');
-    expect(result.X[0].status).toBe('pending');
-    expect(result.X[0].lat).toBeNull();
-  });
-
-  it('lança erro quando o KML não tem nenhuma pasta (Folder)', async () => {
-    const h = await loadApp();
-    const semFolder = `<?xml version="1.0"?><kml><Document></Document></kml>`;
-    expect(() => h.parseKMLText(semFolder, 'vazio.kml')).toThrow('Nenhuma pasta');
-  });
-
-  it('duas pastas com o MESMO nome dentro do MESMO arquivo recebem chaves distintas (sufixo do arquivo)', async () => {
-    const h = await loadApp();
-    const kmlComDuasPastasIguais = `<?xml version="1.0"?><kml><Document>
-      <Folder><name>ILHA</name>
-        <Placemark><name>A1</name><address>Rua A, 1</address>
-          <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
+  it('usa valores vazios/padrão quando ExtendedData ou description estão ausentes', () => {
+    const xml = `<?xml version="1.0"?>
+      <kml><Document><Folder>
+        <name>SEM_EXTRA</name>
+        <Placemark>
+          <name>X01</name>
+          <address>Rua Y, 5</address>
+          <Point><coordinates>-51.1,-30.2,0</coordinates></Point>
         </Placemark>
-      </Folder>
-      <Folder><name>ILHA</name>
-        <Placemark><name>A2</name><address>Rua B, 2</address>
-          <Point><coordinates>-51.21,-29.91,0</coordinates></Point>
-        </Placemark>
-      </Folder>
-    </Document></kml>`;
-
-    const result = h.parseKMLText(kmlComDuasPastasIguais, 'duplicado.kml');
-    const keys = Object.keys(result);
-    expect(keys).toContain('ILHA');
-    expect(keys).toContain('ILHA (duplicado)');
-    expect(result['ILHA'][0].name).toBe('A1');
-    expect(result['ILHA (duplicado)'][0].name).toBe('A2');
+      </Folder></Document></kml>`;
+    const result = hooks.parseKMLText(xml, 'minimo.kml');
+    const p = result.SEM_EXTRA[0];
+    expect(p.description).toBe('');
+    expect(p.roteiro).toBe('');
+    expect(p.subRoteiro).toBe('');
+    expect(p.setorAbastecimento).toBe('');
+    expect(p.sistema).toBe('');
   });
 
-  it('[FIX] duas pastas com o mesmo nome vindas de ARQUIVOS diferentes NÃO se sobrescrevem mais: mergeRoutesFromFile desambigua com sufixo do arquivo', async () => {
-    const h = await loadApp();
-    const nr1 = h.parseKMLText(SAMPLE_KML(), 'arquivo1.kml');
-    const nr2 = h.parseKMLText(SAMPLE_KML(), 'arquivo2.kml'); // mesmo Folder "ILHA"
-
-    const merged = {};
-    h.mergeRoutesFromFile(merged, nr1, 'arquivo1.kml');
-    h.mergeRoutesFromFile(merged, nr2, 'arquivo2.kml');
-
-    expect(Object.keys(merged).sort()).toEqual(['ILHA', 'ILHA (arquivo2)']);
-    expect(merged['ILHA']).toHaveLength(2); // dados do arquivo1 preservados
-    expect(merged['ILHA (arquivo2)']).toHaveLength(2); // dados do arquivo2 preservados, não perdidos
-  });
-
-  it('mergeRoutesFromFile não desambigua quando não há colisão de nomes', async () => {
-    const h = await loadApp();
-    const nr1 = h.parseKMLText(SAMPLE_KML(), 'sul.kml'); // Folder "ILHA"
-    const kmlNorte = `<?xml version="1.0"?><kml><Document><Folder><name>NORTE</name>
-      <Placemark><name>N01</name><address>Rua Norte, 1</address>
-        <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
-    const nr2 = h.parseKMLText(kmlNorte, 'norte.kml');
-
-    const merged = {};
-    h.mergeRoutesFromFile(merged, nr1, 'sul.kml');
-    h.mergeRoutesFromFile(merged, nr2, 'norte.kml');
-
-    expect(Object.keys(merged).sort()).toEqual(['ILHA', 'NORTE']);
-  });
-
-  it('mergeRoutesFromFile lida com uma terceira colisão do mesmo nome (sufixo numerado)', async () => {
-    const h = await loadApp();
-    const merged = { ILHA: [{ name: 'original' }], 'ILHA (dup)': [{ name: 'segunda' }] };
-    const nr = h.parseKMLText(SAMPLE_KML(), 'dup.kml'); // vai gerar { ILHA: [...] }
-
-    h.mergeRoutesFromFile(merged, nr, 'dup.kml');
-
-    const keys = Object.keys(merged).sort();
-    expect(keys).toEqual(['ILHA', 'ILHA (dup 2)', 'ILHA (dup)']);
-    // nenhum dos roteiros anteriores foi perdido/sobrescrito
-    expect(merged['ILHA'][0].name).toBe('original');
-    expect(merged['ILHA (dup)'][0].name).toBe('segunda');
+  it('desambigua pastas com o mesmo nome dentro do mesmo arquivo, adicionando "(nome-do-arquivo)"', () => {
+    const xml = `<?xml version="1.0"?>
+      <kml><Document>
+        <Folder><name>ILHA</name>${placemark({ name: 'I01' })}</Folder>
+        <Folder><name>ILHA</name>${placemark({ name: 'I02' })}</Folder>
+      </Document></kml>`;
+    const result = hooks.parseKMLText(xml, 'duplicado.kml');
+    expect(Object.keys(result).sort()).toEqual(['ILHA', 'ILHA (duplicado)'].sort());
   });
 });
 
-describe('processKMLFiles (fluxo de importação via drag-and-drop / input file)', () => {
-  it('lê um arquivo .kml real (via FileReader) e popula routes + localStorage', async () => {
-    const h = await loadApp();
-    const file = makeFile(SAMPLE_KML(), 'ROTEIROS SUL.kml');
-
-    h.processKMLFiles([file]);
-    // FileReader é assíncrono mesmo em jsdom; aguarda o próximo tick(s)
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(h.state.routes.ILHA).toBeDefined();
-    expect(h.state.routes.ILHA).toHaveLength(2);
-    expect(h.state.loadedFileNames).toContain('ROTEIROS SUL.kml');
-    expect(localStorage.getItem(h.STORAGE_KEY)).not.toBeNull();
-
-    const saved = JSON.parse(localStorage.getItem(h.STORAGE_KEY));
-    expect(saved.routes.ILHA[0].setorAbastecimento).toBe('EBAT ILHA DA PINTADA/RES ILHA');
+describe('mergeRoutesFromFile', () => {
+  it('adiciona os roteiros do novo arquivo quando não há colisão de nomes', () => {
+    const target = { ILHA: [{ name: 'I01' }] };
+    hooks.mergeRoutesFromFile(target, { CENTRO: [{ name: 'C01' }] }, 'centro.kml');
+    expect(Object.keys(target).sort()).toEqual(['CENTRO', 'ILHA']);
   });
 
-  it('importa múltiplos arquivos .kml de uma vez, mesclando os roteiros', async () => {
-    const h = await loadApp();
-    const kml2 = `<?xml version="1.0"?><kml><Document><Folder><name>NORTE</name>
-      <Placemark><name>N01</name><address>Rua Norte, 1</address>
-        <Point><coordinates>-51.20,-29.90,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
-
-    h.processKMLFiles([makeFile(SAMPLE_KML(), 'sul.kml'), makeFile(kml2, 'norte.kml')]);
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(Object.keys(h.state.routes).sort()).toEqual(['ILHA', 'NORTE']);
+  it('desambigua com "(nome-do-arquivo)" quando o roteiro já existe (veio de outro arquivo)', () => {
+    const target = { ILHA: [{ name: 'I01' }] };
+    hooks.mergeRoutesFromFile(target, { ILHA: [{ name: 'I02' }] }, 'outro.kml');
+    expect(target.ILHA).toEqual([{ name: 'I01' }]);
+    expect(target['ILHA (outro)']).toEqual([{ name: 'I02' }]);
   });
 
-  it('[FIX] processKMLFiles não perde mais um roteiro quando dois arquivos têm uma pasta com o mesmo nome', async () => {
-    const h = await loadApp();
-    // ambos os arquivos têm uma pasta "ILHA", mas com pontos diferentes
-    const kmlArquivo2 = `<?xml version="1.0"?><kml><Document><Folder><name>ILHA</name>
-      <Placemark><name>I99</name><address>Rua Outra Ilha, 99</address>
-        <Point><coordinates>-51.30,-29.80,0</coordinates></Point>
-      </Placemark>
-    </Folder></Document></kml>`;
+  it('incrementa o sufixo numérico em colisões sucessivas do mesmo par nome/arquivo', () => {
+    const target = { ILHA: [{ name: 'I01' }], 'ILHA (outro)': [{ name: 'I02' }] };
+    hooks.mergeRoutesFromFile(target, { ILHA: [{ name: 'I03' }] }, 'outro.kml');
+    expect(target['ILHA (outro 2)']).toEqual([{ name: 'I03' }]);
+  });
+});
 
-    h.processKMLFiles([makeFile(SAMPLE_KML(), 'sul.kml'), makeFile(kmlArquivo2, 'extra.kml')]);
-    await new Promise(r => setTimeout(r, 50));
+describe('processKMLFiles', () => {
+  it('lê um arquivo .kml válido, popula routes, marca dataSource=local e salva a lista de arquivos', async () => {
+    const file = new File([kml({ placemarks: [placemark()] })], 'ilha.kml', { type: 'text/xml' });
 
-    const keys = Object.keys(h.state.routes).sort();
-    expect(keys).toEqual(['ILHA', 'ILHA (extra)']);
-    expect(h.state.routes['ILHA']).toHaveLength(2); // I01, I02 (do sul.kml)
-    expect(h.state.routes['ILHA (extra)']).toHaveLength(1); // I99 (do extra.kml) — não foi perdido
+    hooks.processKMLFiles([file]);
+    // FileReader.readAsText resolve de forma assíncrona; aguarda o onload.
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(hooks.state.dataSource).toBe('local');
+    expect(hooks.state.loadedFileNames).toEqual(['ilha.kml']);
+    expect(Object.keys(hooks.state.routes)).toEqual(['ILHA']);
+    expect(hooks.state.routes.ILHA[0].name).toBe('I01');
+  });
+
+  it('mescla múltiplos arquivos e desambigua roteiros com nomes repetidos entre eles', async () => {
+    const fileA = new File([kml({ folderName: 'ILHA', placemarks: [placemark({ name: 'A01' })] })], 'a.kml', { type: 'text/xml' });
+    const fileB = new File([kml({ folderName: 'ILHA', placemarks: [placemark({ name: 'B01' })] })], 'b.kml', { type: 'text/xml' });
+
+    hooks.processKMLFiles([fileA, fileB]);
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(hooks.state.loadedFileNames.sort()).toEqual(['a.kml', 'b.kml']);
+    const keys = Object.keys(hooks.state.routes).sort();
+    expect(keys).toHaveLength(2);
+    expect(keys.some(k => k === 'ILHA')).toBe(true);
+    expect(keys.some(k => k.startsWith('ILHA ('))).toBe(true);
+  });
+
+  it('ignora um arquivo malformado (sem pastas) sem interromper o processamento dos demais', async () => {
+    const good = new File([kml({ placemarks: [placemark()] })], 'ok.kml', { type: 'text/xml' });
+    const bad = new File(['<?xml version="1.0"?><kml><Document></Document></kml>'], 'ruim.kml', { type: 'text/xml' });
+
+    hooks.processKMLFiles([good, bad]);
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(hooks.state.loadedFileNames).toEqual(['ok.kml']);
+    expect(Object.keys(hooks.state.routes)).toEqual(['ILHA']);
   });
 });

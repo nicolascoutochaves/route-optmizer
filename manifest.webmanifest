@@ -2,7 +2,7 @@
   "name": "Otimizador de Roteiros",
   "short_name": "Roteiros",
   "description": "Geocodificação e otimização de roteiros a partir de arquivos KML/JSON.",
-  "start_url": "./Otimizador_de_Roteiros.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",

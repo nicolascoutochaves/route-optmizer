@@ -1,13 +1,356 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="refresh" content="0; url=./Otimizador_de_Roteiros.html" />
-  <title>Otimizador de Roteiros</title>
-  <script>location.replace("./Otimizador_de_Roteiros.html");</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Processador de Roteiros KML — Mapbox + TSP</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#0052B3">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Roteiros">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+
 </head>
+
 <body>
-  <p>Abrindo o Otimizador de Roteiros… <a href="./Otimizador_de_Roteiros.html">clique aqui</a> se não redirecionar automaticamente.</p>
+  <div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+      <div>
+        <h1>Otimizador de Roteiros</h1>
+        <p>Geocodificação com otimização de rotas</p>
+      </div>
+
+      <div class="header-actions">
+        <button id="btn-auth" class="btn primary" title="Entrar com sua conta para carregar os roteiros do banco">
+          🔐 Entrar
+        </button>
+        <button id="theme-toggle" class="btn">
+          🌙 Modo escuro
+        </button>
+      </div>
+    </div>
+
+    <!-- CONFIG SECTION -->
+    <div class="card">
+      <p class="lbl">Sobre</p>
+      <p class="note">
+        Carregue um arquivo JSON ou KML (camadas do maps) com os roteiros. Limite de até 100 paradas (98 pontos +
+        Inicial e final)
+      </p>
+      <p class="note note-spaced">
+        <strong>Endereço inicial e final:</strong> Rua Barão do Guaíba, 781, Porto Alegre, RS
+      </p>
+    </div>
+
+    <!-- FILE UPLOAD SECTION -->
+    <div class="card" id="upload-card">
+
+      <!-- FSA bar: shown when a JSON file handle is linked -->
+      <div id="fsa-bar">
+        <div id="fsa-bar-info">
+          <span>🔗 JSON vinculado:</span>
+          <span class="fsa-filename" id="fsa-filename">—</span>
+        </div>
+        <div class="btn-group-wrap">
+          <button class="btn btn-sm" id="btn-fsa-reload">🔄 Recarregar arquivo</button>
+          <button class="btn btn-sm btn-danger-outline" id="btn-fsa-unlink">🔌 Desvincular</button>
+        </div>
+      </div>
+
+      <div id="saved-bar" class="saved-bar">
+        <span class="badge success" id="saved-info">✓ Roteiros carregados</span>
+        <div class="btn-group-wrap">
+          <button class="btn btn-sm" id="btn-export-json">💾 Exportar roteiros em JSON</button>
+          <button class="btn btn-sm btn-danger-outline" id="btn-clear-storage">🗑️
+            Descarregar arquivo</button>
+        </div>
+      </div>
+
+      <!-- FSA JSON link button -->
+      <div class="fsa-link-row">
+        <label id="db-toggle-wrap" class="db-toggle-wrap" title="Quando ligado, os roteiros são carregados/salvos automaticamente no banco (requer login autorizado)">
+          <span class="db-toggle-switch">
+            <input type="checkbox" id="db-toggle" checked />
+            <span class="db-toggle-slider"></span>
+          </span>
+          <span class="db-toggle-label">Carregar do Banco</span>
+        </label>
+        <button class="btn primary btn-text-sm" id="btn-fsa-link">🔗 Importar novo json</button>
+        <span class="note note-flush">
+          Arquivo onde os roteiros são salvos
+        </span>
+        <span class="note note-flush" id="db-source-badge"></span>
+        <div id="btn-help-container" style="width: 50%; display: block;">
+          <button class="btn primary btn-text-sm" id="btn-fsa-help"
+            onclick="window.open('./ajuda/ajuda_rapida.html', '_blank')">Ir para a página de ajuda</button>
+        </div>
+      </div>
+
+      <p class="lbl lbl-spaced">🔄 Carregar arquivos KML</p>
+      <p class="note note-spaced-sm">
+        Selecione um ou mais <strong>.kml</strong>. - Importa os pontos pelos mapas salvos do google maps.
+      </p>
+
+      <label id="drop-zone" class="drop-zone">
+        <span class="drop-zone-icon">📂</span>
+        <span class="drop-zone-text">Clique ou arraste arquivos KML aqui</span>
+        <span class="note note-flush">Múltiplos arquivos permitidos</span>
+        <input type="file" id="fi" accept=".kml" multiple class="visually-hidden" />
+      </label>
+
+      <input type="file" id="fi-json-fallback" accept=".json" class="visually-hidden" />
+
+      <p id="fi-msg" class="note note-spaced"></p>
+      <div id="loaded-files-list" class="loaded-files-list"></div>
+    </div>
+
+    <!-- ROUTE SELECTION SECTION -->
+    <div id="sec-routes" class="section">
+      <div class="card">
+        <p class="lbl">Selecione o roteiro &nbsp;&nbsp;<button id="btn-edit-route" class="btn">✏️ Editar
+            Roteiro</button></p>
+
+        <div class="export-actions">
+          <button id="btn-export-selected-kml" class="btn success" disabled>⬇️ Exportar selecionados (KML)</button>
+          <button id="btn-export-all-kml" class="btn">⬇️ Exportar tudo (KML)</button>
+          <span class="note note-flush" id="export-sel-count"></span>
+          <span class="note note-flush" id="export-progress-text"></span>
+        </div>
+
+        <div class="route-grid" id="route-grid"></div>
+      </div>
+    </div>
+
+    <!-- PROCESSING SECTION -->
+    <div id="sec-proc" class="section hidden">
+      <div class="card">
+
+        <div class="buttons-top">
+          <div>
+            <p class="rname-title" id="rname-t">-</p>
+            <p class="note" id="rname-s"></p>
+          </div>
+          <div class="buttons-top-actions">
+            <button id="btn-gen-link" class="btn primary">🔗 Gerar Link de rota na ordem atual</button>
+            <button id="btn-run" class="btn primary">⚡ Geocodificar + Otimizar</button>
+
+            <button id="btn-del-route" class="btn btn-hidden btn-delete-route">🗑️
+              Remover roteiro</button>
+          </div>
+        </div>
+
+        <!-- EDIT PANEL: edição individual dos pontos do roteiro selecionado -->
+        <div id="edit-panel" class="edit-panel hidden">
+          <div class="edit-panel-header">
+            <span class="edit-panel-title">✏️ Editar pontos do roteiro</span>
+            <button id="btn-edit-close" class="btn btn-sm">✕ Fechar</button>
+          </div>
+          <div id="edit-rows" class="edit-rows"></div>
+          <div class="buttons-row edit-panel-actions">
+            <button id="btn-edit-add" class="btn">➕ Adicionar ponto</button>
+            <button id="btn-edit-save" class="btn success">💾 Salvar alterações</button>
+          </div>
+          <p id="edit-status" class="note note-min-height"></p>
+        </div>
+
+        <div class="progress hidden" id="pbar">
+          <div class="progress-fill" id="pfill"></div>
+        </div>
+        <p class="note note-min-height" id="ptxt"></p>
+        <div id="pts-list" class="pts-list"></div>
+        <button id="btn-save-drag-order" class="btn success hidden">💾 Salvar ordem</button>
+        <div id="order-box" class="hidden order-box"></div>
+        <button id="btn-save-tsp-order" class="btn success hidden">💾 Salvar ordem otimizada</button>
+      </div>
+    </div>
+
+    <!-- AUTH BOX -->
+    <div class="fix-box hidden" id="auth-box">
+      <div class="fix-box-header">
+        <span class="fix-box-icon">🔐</span>
+        <span class="fix-box-label">Login</span>
+      </div>
+      <p class="note" id="auth-status">Faça login para carregar os roteiros do banco (acesso restrito a usuários cadastrados).</p>
+      <input type="email" id="auth-email" placeholder="E-mail" autocomplete="username" />
+      <input type="password" id="auth-password" placeholder="Senha" autocomplete="current-password" class="note-spaced-sm" />
+      <div class="buttons-row">
+        <button id="btn-auth-submit" class="btn primary">Entrar</button>
+        <button id="btn-auth-logout" class="btn btn-hidden">Sair</button>
+        <button id="btn-auth-cancel" class="btn">✕ Cancelar</button>
+      </div>
+      <p id="auth-result" class="note note-min-height note-spaced"></p>
+    </div>
+
+    <!-- OUTPUT SECTION -->
+    <div id="sec-out" class="section hidden">
+      <div class="card">
+        <p class="lbl">📊 Resultados</p>
+        <div id="success-message"></div>
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-value" id="st-ok">0</div>
+            <div class="stat-label">Geocodificados</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="st-err">0</div>
+            <div class="stat-label">Não encontrados</div>
+          </div>
+        </div>
+        <div class="buttons-row">
+          <button id="btn-maps" class="btn primary">🗺️ Google Maps</button>
+          <button id="btn-copy" class="btn">📋 Copiar link</button>
+          <button id="btn-rebuild" class="btn warning">🔄 Gerar link</button>
+          <button id="btn-kml" class="btn success">⬇️ Baixar KML</button>
+        </div>
+        <p id="split-note" class="note hidden note-spaced"></p>
+        <div id="lbox" class="code-box hidden"></div>
+        <div class="qr-container hidden" id="qr-section">
+          <h3>📱 Abrir no Celular</h3>
+          <p class="qr-desc">Escaneie o código QR com
+            seu celular para abrir a rota no Google Maps</p>
+          <div id="qrcode"></div>
+          <p class="qr-hint">💡 Use a câmera do seu celular ou um leitor de QR Code</p>
+        </div>
+      </div>
+    </div>
+  </div><!-- /container -->
+
+  <!-- ============================================================
+     CUSTOM ROUTE PANEL (SIDE DRAWER)
+     ============================================================ -->
+  <div id="custom-backdrop"></div>
+
+  <div id="custom-panel">
+    <!-- Panel Header -->
+    <div class="panel-header">
+      <h2>✏️ Roteiro Personalizado</h2>
+      <button class="panel-close" id="panel-close-btn" title="Fechar painel">✕</button>
+    </div>
+
+    <div class="panel-body">
+
+      <!-- Route tabs for point selection -->
+      <div class="panel-section">
+        <div class="panel-section-title">1 — Escolha o roteiro para selecionar pontos</div>
+        <div class="panel-route-tabs" id="panel-route-tabs">
+          <div class="panel-no-routes">Carregue arquivos KML primeiro</div>
+        </div>
+      </div>
+
+      <!-- Points of selected route -->
+      <div id="panel-points-section">
+        <div id="panel-select-all-box" class="panel-select-all-box">
+          <input type="checkbox" id="panel-select-all-check" />
+          <label for="panel-select-all-check" class="panel-select-all-label">
+            Selecionar todos os pontos do roteiro
+          </label>
+        </div>
+        <div id="panel-points-list" class="panel-points-list">
+          <div class="panel-points-placeholder">
+            Selecione um roteiro acima para ver seus pontos
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected points header -->
+      <div class="panel-selected-header">
+        <div class="panel-selected-title">2 — Pontos selecionados</div>
+        <span class="panel-selected-count" id="panel-sel-count">0</span>
+      </div>
+
+      <!-- Selected points drag-and-drop list -->
+      <div id="panel-selected-list">
+        <div class="sel-empty" id="panel-sel-empty">Nenhum ponto selecionado ainda.<br><span
+            class="sel-empty-hint">Clique nos pontos acima para adicionar.</span></div>
+      </div>
+
+      <!-- Link preview -->
+      <div class="panel-link-wrap">
+        <div class="panel-link-box" id="panel-link-box"></div>
+      </div>
+
+      <!-- QR Code area -->
+      <div class="panel-qr" id="panel-qr-section">
+        <h4>📱 Abrir no Celular</h4>
+        <div id="panel-qrcode"></div>
+      </div>
+
+
+    </div><!-- /panel-body -->
+
+    <!-- Panel Footer / Actions -->
+    <div class="panel-footer">
+      <div class="panel-mini-progress" id="panel-mini-progress">
+        <div class="panel-mini-progress-fill" id="panel-mini-fill"></div>
+      </div>
+      <div class="panel-status" id="panel-status"></div>
+
+      <!-- Save row -->
+      <div class="panel-input-row">
+        <input type="text" id="panel-route-name" placeholder="Nome do roteiro personalizado…"
+          class="panel-route-name-input" />
+        <button class="btn success btn-panel-save" id="panel-btn-save">💾 Salvar</button>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="panel-footer-row">
+        <button class="btn primary btn-flex" id="panel-btn-gen-link">🔗 Gerar Link</button>
+        <button class="btn custom-btn btn-flex" id="panel-btn-optimize">⚡ Otimizar</button>
+      </div>
+      <div class="panel-footer-row">
+        <button class="btn btn-flex" id="panel-btn-copy-link">🗺️ Abrir no Maps</button>
+        <button class="btn success btn-flex" id="panel-btn-kml">⬇️ Baixar KML</button>
+        <button class="btn danger btn-fixed" id="panel-btn-clear">🗑️</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const themeBtn = document.getElementById("theme-toggle");
+
+    // carrega preferência
+    const savedTheme = localStorage.getItem("theme");
+
+    if (savedTheme === "light") {
+      document.body.classList.add("light");
+    }
+
+    function updateThemeButton() {
+      const light = document.body.classList.contains("light");
+
+      themeBtn.textContent = light
+        ? "☀️ Modo claro"
+        : "🌙 Modo escuro";
+
+      localStorage.setItem("theme", light ? "light" : "dark");
+    }
+
+    updateThemeButton();
+
+    themeBtn.addEventListener("click", () => {
+      document.body.classList.toggle("light");
+      updateThemeButton();
+    });
+
+    // Registra o service worker (permite instalar como app e funcionar offline)
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch((err) => {
+          console.warn("Falha ao registrar service worker:", err);
+        });
+      });
+    }
+  </script>
 </body>
+
 </html>
