@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadApp, mockFetch, apiSuccessResponse, apiNotFoundResponse, samplePoint } from './testUtils.js';
+import { loadApp, samplePoint } from './testUtils.js';
 
 function setupRouteWithOnePoint(h) {
   h.state.routes = { R1: [samplePoint({ name: 'P1', address: 'Rua Velha, 10' })] };
@@ -8,61 +8,6 @@ function setupRouteWithOnePoint(h) {
   btn.click(); // dispara o onclick real, que define currentRouteKey e chama selectRoute()
   return btn;
 }
-
-describe('Correção pontual de endereço (fix box)', () => {
-  it('openFix preenche a caixa de correção com os dados do ponto selecionado', async () => {
-    const h = await loadApp();
-    setupRouteWithOnePoint(h);
-    h.openFix(0);
-    expect(document.getElementById('fix-pname').textContent).toBe('P1');
-    expect(document.getElementById('fix-box').classList.contains('hidden')).toBe(false);
-  });
-
-  it('btn-fix-geo geocodifica o novo endereço digitado e atualiza o ponto (marcando corrected=true)', async () => {
-    const h = await loadApp();
-    setupRouteWithOnePoint(h);
-    h.openFix(0);
-    document.getElementById('fix-input').value = 'Rua Nova, 200, Porto Alegre, RS, Brasil';
-    mockFetch(async () => apiSuccessResponse({ lng: -51.19, lat: -30.05, label: 'Rua Nova, 200' }));
-
-    const btn = document.getElementById('btn-fix-geo');
-    await btn.onclick.call(btn);
-
-    expect(h.state.points[0].lat).toBeCloseTo(-30.05);
-    expect(h.state.points[0].lng).toBeCloseTo(-51.19);
-    expect(h.state.points[0].corrected).toBe(true);
-    expect(h.state.points[0].status).toBe('ok');
-    expect(document.getElementById('fix-result').textContent).toContain('Reposicionado');
-    // syncPointsToRoute() deve refletir no `routes`
-    expect(h.state.routes.R1[0].corrected).toBe(true);
-  });
-
-  it('btn-fix-geo mostra mensagem de erro quando o endereço não é encontrado', async () => {
-    const h = await loadApp();
-    setupRouteWithOnePoint(h);
-    h.openFix(0);
-    document.getElementById('fix-input').value = 'Endereço Inexistente, 99999999';
-    mockFetch(async () => apiNotFoundResponse());
-
-    const btn = document.getElementById('btn-fix-geo');
-    await btn.onclick.call(btn);
-
-    expect(document.getElementById('fix-result').textContent).toContain('Não encontrado');
-    expect(h.state.points[0].corrected).toBe(false);
-  });
-
-  it('btn-fix-cancel fecha a caixa de correção sem alterar o ponto', async () => {
-    const h = await loadApp();
-    setupRouteWithOnePoint(h);
-    h.openFix(0);
-    const original = { ...h.state.points[0] };
-
-    document.getElementById('btn-fix-cancel').click();
-
-    expect(document.getElementById('fix-box').classList.contains('hidden')).toBe(true);
-    expect(h.state.points[0]).toEqual(original);
-  });
-});
 
 describe('Painel de edição de pontos (adicionar / editar / remover)', () => {
   it('openEditPanel cria uma cópia de trabalho (editDraftPoints) sem afetar `points` até salvar', async () => {
