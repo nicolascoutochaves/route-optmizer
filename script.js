@@ -1209,6 +1209,7 @@ document.getElementById('btn-edit-save').onclick = async function () {
 
 document.getElementById('btn-edit-close').onclick = closeEditPanel;
 
+// Salva no JSON a ordem atual dos pontos (arrastados manualmente na lista antes do TSP).
 document.getElementById('btn-save-drag-order').onclick = async function () {
   this.disabled = true;
   syncPointsToRoute();
@@ -1217,6 +1218,8 @@ document.getElementById('btn-save-drag-order').onclick = async function () {
   this.disabled = false;
 };
 
+// Salva no JSON a ordem escolhida pelo TSP (a que aparece em "Rota da sua preferência"),
+// mantendo ao final quaisquer pontos que não entraram na otimização (ex.: sem coordenadas).
 document.getElementById('btn-save-tsp-order').onclick = async function () {
   if (!optimizedStops?.length) { showToast('Nenhuma rota otimizada para salvar.', 'error'); return; }
   this.disabled = true;
