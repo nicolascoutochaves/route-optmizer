@@ -1275,7 +1275,7 @@ const buildOutputs = async () => {
 };
 
 // ============================================================================
-// EXPORTAÇÃO KML
+// EXPORTAÇÃO KML (rota otimizada única)
 // ============================================================================
 const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   rname = (rname || currentRoute || 'roteiro').replace(/\.xlsx$/i, '');
@@ -1298,16 +1298,20 @@ const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   const a = document.createElement('a'); a.href = url; a.download = rname + '.kml'; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 };
+
 // ============================================================================
-// EXPORTAÇÃO KML — marcador circular (nunca "alfinete"/pin), com uma cor
+// EXPORTAÇÃO KML — marcador pin padrão (não mais "círculo"), com uma cor
 // distinta POR ROTEIRO — assim dá pra ver onde um roteiro termina e o
-// próximo começa mesmo quando vários se misturam numa mesma camada de
-// sistema. A cor de cada roteiro é sempre a mesma nos dois agrupamentos
-// (por roteiro / por sistema), já que é calculada a partir do nome dele.
+// próximo começa mesmo quando vários se misturam num mesmo arquivo.
+// A cor de cada roteiro é sempre a mesma nos dois arquivos gerados
+// (por roteiro / por subsistema), já que é calculada a partir do índice dele.
 // ============================================================================
+const KML_PIN_ICON = 'http://maps.google.com/mapfiles/kml/pushpin/wht-pushpin.png';
+
 const KML_BASE_STYLE =
   '<Style id="base"><IconStyle><color>ff000000</color><scale>1.8</scale>' +
-  '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>' +
+  `<Icon><href>${KML_PIN_ICON}</href></Icon>` +
+  '<hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>' +
   '</IconStyle><LabelStyle><scale>1.4</scale></LabelStyle></Style>\n';
 
 /** Converte HSL (h:0-360, s/l:0-1) para o formato de cor do KML (aabbggrr). */
@@ -1331,53 +1335,67 @@ const hslToKmlColor = (h, s, l) => {
  * sem nunca repetir (diferente de uma paleta fixa de N cores). */
 const kmlColorForRouteIndex = i => hslToKmlColor((i * 137.508) % 360, 0.75, 0.48);
 
-/** Monta a tag <Style> completa (marcador circular) pro roteiro de índice `i`. */
+/** Monta a tag <Style> completa (marcador pin) pro roteiro de índice `i`. */
 const kmlRouteStyleTag = i =>
   `<Style id="route${i}"><IconStyle><color>${kmlColorForRouteIndex(i)}</color><scale>1.0</scale>` +
-  `<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>` +
+  `<Icon><href>${KML_PIN_ICON}</href></Icon>` +
+  '<hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>' +
   `</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>\n`;
 
 // ============================================================================
-// EXPORTAÇÃO KML MULTI-ROTEIRO
-// Gera DOIS agrupamentos no mesmo arquivo:
-//   1) "Por roteiro"  -> uma camada por roteiro (ideal pro Google Earth, sem
-//      limite de camadas)
-//   2) "Por sistema de abastecimento" -> uma camada por sistema, agregando
+// EXPORTAÇÃO KML — dois arquivos separados
+//   1) "pontos_por_roteiro.kml"    -> uma camada por roteiro (ideal pro
+//      Google Earth, sem limite de camadas)
+//   2) "pontos_por_subsistema.kml" -> uma camada por sistema, agregando
 //      pontos de todos os roteiros selecionados (no máx. ~10 camadas — ideal
 //      pro Google My Maps, que só aceita até 10)
-// Cada roteiro tem sua própria cor de marcador, igual nos dois agrupamentos.
+// Cada roteiro mantém a mesma cor de marcador nos dois arquivos.
 // ============================================================================
-const buildMultiRouteKml = (routeNames, docName) => {
+
+/** Cabeçalho comum aos dois KMLs: estilos + camada BASE. */
+const buildKmlDocumentHeader = (docName, routeNames) => {
   let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
     `<name>${escXML(docName)}</name>\n` +
     KML_BASE_STYLE;
-
   routeNames.forEach((_, i) => { kml += kmlRouteStyleTag(i); });
-
   kml += '<Folder>\n<name>📍 Base</name>\n' +
     `<Placemark>\n<name>BASE</name>\n<description>${escXML(START_END)}</description>\n<styleUrl>#base</styleUrl>\n` +
     (startCoord ? `<Point><coordinates>${startCoord.lng.toFixed(6)},${startCoord.lat.toFixed(6)},0</coordinates></Point>\n` : '') +
     '</Placemark>\n</Folder>\n';
+  return kml;
+};
 
+const buildKmlByRoute = (routeNames, docName) => {
+  let kml = buildKmlDocumentHeader(docName, routeNames);
   let skipped = 0;
-  const allValidPoints = []; // { p, routeName, routeIdx } — usado no agrupamento por sistema
 
-  // --- Agrupamento 1: por roteiro ---
   kml += '<Folder>\n<name>🗂️ Por roteiro</name>\n';
   routeNames.forEach((name, routeIdx) => {
     const pts = routes[name] || [];
     const valid = pts.filter(p => p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined && !isNaN(p.lat) && !isNaN(p.lng));
     skipped += pts.length - valid.length;
     kml += `<Folder>\n<name>${escXML(name.replace(/\.xlsx$/i, ''))}</name>\n`;
-    valid.forEach((p, idx) => {
-      allValidPoints.push({ p, routeName: name, routeIdx });
-      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+    valid.forEach(p => {
+      kml += `<Placemark>\n<name>${escXML((p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
     });
     kml += '</Folder>\n';
   });
-  kml += '</Folder>\n';
+  kml += '</Folder>\n</Document>\n</kml>';
+  return { kml, skipped };
+};
 
-  // --- Agrupamento 2: por sistema de abastecimento ---
+const buildKmlBySistema = (routeNames, docName) => {
+  let kml = buildKmlDocumentHeader(docName, routeNames);
+  let skipped = 0;
+  const allValidPoints = []; // { p, routeName, routeIdx }
+
+  routeNames.forEach((name, routeIdx) => {
+    const pts = routes[name] || [];
+    const valid = pts.filter(p => p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined && !isNaN(p.lat) && !isNaN(p.lng));
+    skipped += pts.length - valid.length;
+    valid.forEach(p => allValidPoints.push({ p, routeName: name, routeIdx }));
+  });
+
   const bySistema = {};
   allValidPoints.forEach(({ p, routeName, routeIdx }) => {
     const key = (p.sistema || '').trim() || 'Sem sistema';
@@ -1388,26 +1406,35 @@ const buildMultiRouteKml = (routeNames, docName) => {
   Object.keys(bySistema).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(sistema => {
     const pts = bySistema[sistema];
     kml += `<Folder>\n<name>${escXML(sistema)} (${pts.length})</name>\n`;
-    pts.forEach(({ p, routeName, routeIdx }, idx) => {
+    pts.forEach(({ p, routeName, routeIdx }) => {
       const desc = [p.address, `Roteiro: ${routeName.replace(/\.xlsx$/i, '')}`].filter(Boolean).join(' — ');
-      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+      kml += `<Placemark>\n<name>${escXML((p.name || 'Sem nome'))}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
     });
     kml += '</Folder>\n';
   });
-  kml += '</Folder>\n';
-
-  kml += '</Document>\n</kml>';
+  kml += '</Folder>\n</Document>\n</kml>';
   return { kml, skipped };
 };
 
-const exportRoutesAsKml = (routeNames, filename) => {
-  if (!routeNames.length) { showToast('Nenhum roteiro selecionado', 'error'); return; }
-  const { kml, skipped } = buildMultiRouteKml(routeNames, filename.replace(/\.kml$/i, ''));
-  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+const downloadKmlBlob = (kmlStr, filename) => {
+  const blob = new Blob([kmlStr], { type: 'application/vnd.google-earth.kml+xml' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  showToast(skipped ? `✓ KML exportado (${skipped} ponto(s) sem coordenadas ignorados)` : '✓ KML exportado com camadas', skipped ? 'info' : 'success');
+};
+
+const exportRoutesAsKml = (routeNames, docName) => {
+  if (!routeNames.length) { showToast('Nenhum roteiro selecionado', 'error'); return; }
+  const baseDocName = docName.replace(/\.kml$/i, '');
+
+  const byRoute = buildKmlByRoute(routeNames, `${baseDocName} — por roteiro`);
+  const bySistema = buildKmlBySistema(routeNames, `${baseDocName} — por subsistema`);
+
+  downloadKmlBlob(byRoute.kml, 'pontos_por_roteiro.kml');
+  downloadKmlBlob(bySistema.kml, 'pontos_por_subsistema.kml');
+
+  const skipped = byRoute.skipped; // mesma contagem nos dois arquivos
+  showToast(skipped ? `✓ 2 KMLs exportados (${skipped} ponto(s) sem coordenadas ignorados)` : '✓ 2 KMLs exportados', skipped ? 'info' : 'success');
 };
 
 const updateExportButtonsState = () => {
@@ -1947,7 +1974,7 @@ if (typeof window !== 'undefined') {
     supabaseRequest, supabaseSignIn, supabaseSignOut, checkAuthorization, restoreSupabaseSession,
     loadRoutesFromDB, saveRouteKeysToDB, syncRouteKeysToDB, dbRowToPoint, pointToDbRow, syncQueue,
     setDBToggle, updateDBToggleUI, updateJsonExportButtonState, updateAuthUI,
-    parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
+    parseKMLText, buildKmlFromOptimizedRoute, buildKmlByRoute, buildKmlBySistema, exportRoutesAsKml,
     processKMLFiles, mergeRoutesFromFile,
     buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
     renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow,
