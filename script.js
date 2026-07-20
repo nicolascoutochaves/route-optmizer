@@ -1371,7 +1371,7 @@ const buildMultiRouteKml = (routeNames, docName) => {
     kml += `<Folder>\n<name>${escXML(name.replace(/\.xlsx$/i, ''))}</name>\n`;
     valid.forEach((p, idx) => {
       allValidPoints.push({ p, routeName: name, routeIdx });
-      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+      kml += `<Placemark>\n<name>${escXML(((p.name || 'Sem nome'))}</name>\n<description>${escXML(p.address || '')}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
     });
     kml += '</Folder>\n';
   });
@@ -1390,7 +1390,7 @@ const buildMultiRouteKml = (routeNames, docName) => {
     kml += `<Folder>\n<name>${escXML(sistema)} (${pts.length})</name>\n`;
     pts.forEach(({ p, routeName, routeIdx }, idx) => {
       const desc = [p.address, `Roteiro: ${routeName.replace(/\.xlsx$/i, '')}`].filter(Boolean).join(' — ');
-      kml += `<Placemark>\n<name>${escXML((idx + 1) + '. ' + (p.name || 'Sem nome'))}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
+      kml += `<Placemark>\n<name>${escXML(((p.name || 'Sem nome'))}</name>\n<description>${escXML(desc)}</description>\n<styleUrl>#route${routeIdx}</styleUrl>\n<Point><coordinates>${p.lng.toFixed(6)},${p.lat.toFixed(6)},0</coordinates></Point>\n</Placemark>\n`;
     });
     kml += '</Folder>\n';
   });
