@@ -15,6 +15,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Roteiros">
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <link rel="stylesheet" href="style.css">
   <script src="script.js" defer></script>
@@ -28,13 +32,14 @@
     <div class="header">
       <div>
         <h1>Otimizador de Roteiros</h1>
-        <p>Geocodificação com otimização de rotas</p>
+        <p>Geocodificação de endereços e otimização automática da ordem de entrega</p>
       </div>
 
       <div class="header-actions">
         <button id="btn-auth" class="btn primary" title="Entrar com sua conta para carregar os roteiros do banco">
           🔐 Entrar
         </button>
+        <a href="./tutoriais.html" class="btn" title="Abrir a página de ajuda">❓ Ajuda</a>
         <button id="theme-toggle" class="btn">
           🌙 Modo escuro
         </button>
@@ -45,16 +50,16 @@
     <div class="card">
       <p class="lbl">Sobre</p>
       <p class="note">
-        Carregue um arquivo JSON ou KML (camadas do maps) com os roteiros. Limite de até 100 paradas (98 pontos +
-        Inicial e final)
+        Os roteiros são carregados automaticamente do banco de dados após o login. Cada roteiro admite até
+        100 paradas (98 pontos intermediários, além dos endereços inicial e final).
       </p>
       <p class="note note-spaced">
-        <strong>Endereço inicial e final:</strong> Rua Barão do Guaíba, 781, Porto Alegre, RS
+        <strong>Endereço inicial e final padrão:</strong> Rua Barão do Guaíba, 781, Porto Alegre, RS
       </p>
     </div>
 
-    <!-- FILE UPLOAD SECTION -->
-    <div class="card" id="upload-card">
+    <!-- FILE UPLOAD SECTION (desativado: a aplicação agora trabalha apenas com o banco de dados) -->
+    <div class="card" id="upload-card" hidden>
 
       <!-- FSA bar: shown when a JSON file handle is linked -->
       <div id="fsa-bar">
@@ -93,7 +98,7 @@
         <span class="note note-flush" id="db-source-badge"></span>
         <div id="btn-help-container" style="width: 50%; display: block;">
           <button class="btn primary btn-text-sm" id="btn-fsa-help"
-            onclick="window.open('./ajuda/ajuda_rapida.html', '_blank')">Ir para a página de ajuda</button>
+            onclick="window.open('./tutoriais.html', '_blank')">Ir para a página de ajuda</button>
         </div>
       </div>
 
@@ -118,13 +123,15 @@
     <!-- ROUTE SELECTION SECTION -->
     <div id="sec-routes" class="section">
       <div class="card">
-        <p class="lbl">Selecione o roteiro &nbsp;&nbsp;<button id="btn-edit-route" class="btn">✏️ Editar
-            Roteiro</button></p>
+        <div class="buttons-top">
+          <p class="lbl note-flush">Roteiros disponíveis</p>
+          <button id="btn-edit-route" class="btn">✏️ Editar roteiro</button>
+        </div>
 
         <div class="export-actions">
-          <button id="btn-export-selected-kml" class="btn success" disabled>⬇️ Exportar selecionados (KML)</button>
-          <button id="btn-export-all-kml" class="btn">⬇️ Exportar tudo (KML)</button>
-          <span class="note note-flush" id="export-sel-count"></span>
+          <button id="btn-export-selected-kml" class="btn success" disabled hidden>⬇️ Exportar selecionados (KML)</button>
+          <button id="btn-export-all-kml" class="btn success">⬇️ Exportar tudo (KML)</button>
+          <span class="note note-flush" id="export-sel-count" hidden></span>
           <span class="note note-flush" id="export-progress-text"></span>
         </div>
 
@@ -142,8 +149,8 @@
             <p class="note" id="rname-s"></p>
           </div>
           <div class="buttons-top-actions">
-            <button id="btn-gen-link" class="btn primary">🔗 Gerar Link de rota na ordem atual</button>
-            <button id="btn-run" class="btn primary">⚡ Geocodificar + Otimizar</button>
+            <button id="btn-gen-link" class="btn primary">🔗 Gerar link com a ordem atual</button>
+            <button id="btn-run" class="btn primary">⚡ Geocodificar e otimizar</button>
 
             <button id="btn-del-route" class="btn btn-hidden btn-delete-route">🗑️
               Remover roteiro</button>
@@ -181,7 +188,7 @@
         <span class="fix-box-icon">🔐</span>
         <span class="fix-box-label">Login</span>
       </div>
-      <p class="note" id="auth-status">Faça login para carregar os roteiros do banco (acesso restrito a usuários cadastrados).</p>
+      <p class="note" id="auth-status">Acesso restrito a usuários cadastrados. Entre com sua conta para carregar os roteiros do banco de dados.</p>
       <input type="email" id="auth-email" placeholder="E-mail" autocomplete="username" />
       <input type="password" id="auth-password" placeholder="Senha" autocomplete="current-password" class="note-spaced-sm" />
       <div class="buttons-row">
@@ -244,7 +251,7 @@
       <div class="panel-section">
         <div class="panel-section-title">1 — Escolha o roteiro para selecionar pontos</div>
         <div class="panel-route-tabs" id="panel-route-tabs">
-          <div class="panel-no-routes">Carregue arquivos KML primeiro</div>
+          <div class="panel-no-routes">Nenhum roteiro carregado ainda</div>
         </div>
       </div>
 
