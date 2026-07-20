@@ -1275,7 +1275,7 @@ const buildOutputs = async () => {
 };
 
 // ============================================================================
-// EXPORTAÇÃO KML
+// EXPORTAÇÃO KML (rota otimizada única)
 // ============================================================================
 const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   rname = (rname || currentRoute || 'roteiro').replace(/\.xlsx$/i, '');
@@ -1298,6 +1298,7 @@ const buildKmlFromOptimizedRoute = (orderedStops, rname) => {
   const a = document.createElement('a'); a.href = url; a.download = rname + '.kml'; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 };
+
 // ============================================================================
 // EXPORTAÇÃO KML — marcador pin padrão (não mais "círculo"), com uma cor
 // distinta POR ROTEIRO — assim dá pra ver onde um roteiro termina e o
@@ -1973,7 +1974,7 @@ if (typeof window !== 'undefined') {
     supabaseRequest, supabaseSignIn, supabaseSignOut, checkAuthorization, restoreSupabaseSession,
     loadRoutesFromDB, saveRouteKeysToDB, syncRouteKeysToDB, dbRowToPoint, pointToDbRow, syncQueue,
     setDBToggle, updateDBToggleUI, updateJsonExportButtonState, updateAuthUI,
-    parseKMLText, buildKmlFromOptimizedRoute, buildMultiRouteKml, exportRoutesAsKml,
+    parseKMLText, buildKmlFromOptimizedRoute, buildKmlByRoute, buildKmlBySistema, exportRoutesAsKml,
     processKMLFiles, mergeRoutesFromFile,
     buildGoogleMapsUrl, shortenUrl, updateShareLink, generateQRCode,
     renderRouteButtons, selectRoute, syncPointsToRoute, renderList, updateRow,
