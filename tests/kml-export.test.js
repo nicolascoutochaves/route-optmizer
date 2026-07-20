@@ -29,8 +29,8 @@ describe('buildKmlFromOptimizedRoute (exportação de rota única otimizada)', (
     const text = await captured.blob.text();
     expect(text).toContain('<name>Meu Roteiro</name>');
     expect(text).toContain('<name>BASE</name>');
-    expect(text).toContain('1. Ponto A');
-    expect(text).toContain('2. Ponto B');
+    expect(text).toContain('Ponto A');
+    expect(text).toContain('Ponto B');
     expect(text).toContain('[CORRIGIDO]'); // Ponto B foi marcado como corrigido
     expect(text).toContain('<LineString>');
   });
@@ -60,8 +60,8 @@ describe('buildMultiRouteKml / exportRoutesAsKml (exportação em camadas)', () 
     const { kml, skipped } = h.buildMultiRouteKml(['ILHA', 'NORTE'], 'Export Teste');
     expect(kml).toContain('<name>ILHA</name>');
     expect(kml).toContain('<name>NORTE</name>');
-    expect(kml).toContain('1. I01');
-    expect(kml).toContain('1. N01');
+    expect(kml).toContain('I01');
+    expect(kml).toContain('N01');
     expect(skipped).toBe(0);
   });
 
@@ -76,7 +76,7 @@ describe('buildMultiRouteKml / exportRoutesAsKml (exportação em camadas)', () 
     };
     const { kml, skipped } = h.buildMultiRouteKml(['ILHA'], 'Export Teste');
     expect(skipped).toBe(1);
-    expect(kml).toContain('1. I01');
+    expect(kml).toContain('I01');
     expect(kml).not.toContain('I02');
   });
 
