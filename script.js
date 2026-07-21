@@ -53,11 +53,21 @@ const formatAddr = raw => {
   return titleCasePt(s) + ', Porto Alegre, RS, Brasil';
 };
 
+const getToastContainer = () => {
+  let c = document.getElementById('toast-container');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'toast-container';
+    document.body.appendChild(c);
+  }
+  return c;
+};
+
 const showToast = (message, type = 'success') => {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
-  document.body.appendChild(toast);
+  getToastContainer().appendChild(toast);
   setTimeout(() => {
     toast.style.animation = 'slideInUp 0.3s ease-out reverse';
     setTimeout(() => toast.remove(), 300);

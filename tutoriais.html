@@ -2,239 +2,274 @@
 <html lang="pt-BR">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vídeos Tutoriais</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Como Funciona — Otimizador de Roteiros</title>
 
-    <!-- PWA -->
-    <link rel="manifest" href="./manifest.webmanifest">
-    <meta name="theme-color" content="#0052B3">
-    <link rel="apple-touch-icon" href="./icons/icon-192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#1a73e8">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Roteiros">
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet">
-    <style>
-        :root {
-            /* Tema escuro (padrão) */
-            --bg: #0F1115;
-            --surface: #181B20;
-            --ink: #F3F5F7;
-            --ink-soft: #B4BDC6;
-            --line: #2A3038;
-            --accent: #3FA88D;
-            --radius: 12px;
-        }
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-        /* Tema claro */
-        body.light {
-            --bg: #F5F6F3;
-            --surface: #FFFFFF;
-            --ink: #1E2A2E;
-            --ink-soft: #55666B;
-            --line: #DDE3DF;
-            --accent: #1F6F5C;
-        }
-
-        * {
-            box-sizing: border-box
-        }
-
-        body {
-            margin: 0;
-            background: var(--bg);
-            font-family: 'Inter', sans-serif;
-            color: var(--ink);
-        }
-
-        .topbar {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-
-            padding: 16px 24px;
-
-            background: rgba(15, 17, 21, .90);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-
-            border-bottom: 1px solid var(--line);
-        }
-
-        .theme-toggle {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-
-            padding: 8px 14px;
-
-            border: 1px solid var(--line);
-            border-radius: 999px;
-
-            background: var(--surface);
-            color: var(--ink);
-
-            cursor: pointer;
-            font: 500 .9rem 'Inter', sans-serif;
-
-            transition: .2s;
-        }
-
-        .theme-toggle:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-
-        .brand {
-            font-family: 'Space Grotesk', sans-serif;
-            font-weight: 700;
-        }
-
-        .hero {
-            max-width: 920px;
-            margin: auto;
-            padding: 50px 24px 20px;
-        }
-
-        .hero h1 {
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: clamp(2rem, 4vw, 3rem);
-            margin-bottom: 10px;
-        }
-
-        .hero p {
-            color: var(--ink-soft);
-        }
-
-        .container {
-            max-width: 920px;
-            margin: auto;
-            padding: 0 24px 60px;
-        }
-
-        .video-card {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            padding: 20px;
-            margin-bottom: 32px;
-        }
-
-        .video-card h2 {
-            font-family: 'Space Grotesk', sans-serif;
-            margin-top: 0;
-            margin-bottom: 14px;
-        }
-
-        .video-card p {
-            color: var(--ink-soft);
-        }
-
-        iframe {
-            width: 100%;
-            aspect-ratio: 16/9;
-            border: none;
-            border-radius: 10px;
-        }
-    </style>
+  <!-- Reaproveita o mesmo design system usado na aplicação principal -->
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div class="topbar">
-        <div class="brand">GUIA | Otimizador de Roteiros</div>
+  <div class="container">
 
-        <button class="theme-toggle" id="theme-toggle">
-            🌙 Modo escuro
-        </button>
+    <!-- HEADER -->
+    <div class="header">
+      <div>
+        <h1>Como Funciona</h1>
+        <p>Guia rápido do Otimizador de Roteiros</p>
+      </div>
+
+      <div class="header-actions">
+        <a href="./index.html" class="btn primary">← Voltar à aplicação</a>
+        <button id="theme-toggle" class="btn">🌙 Modo escuro</button>
+      </div>
     </div>
 
-    <section class="hero">
-        <h1>Vídeos Tutoriais</h1>
-        <p>Substitua os IDs dos vídeos do YouTube pelos seus próprios vídeos.</p>
-    </section>
-
-    <div class="container">
-
-        <div class="video-card">
-            <h2>▶ Tutorial 01 - Como importar roteiros</h2>
-            <iframe src="https://www.youtube.com/embed/VIDEO1" allowfullscreen></iframe>
-            <p>Descrição do tutorial.</p>
-        </div>
-
-        <div class="video-card">
-            <h2>▶ Tutorial 02 - Vinculando JSON</h2>
-            <iframe src="https://www.youtube.com/embed/VIDEO2" allowfullscreen></iframe>
-            <p>Descrição do tutorial.</p>
-        </div>
-
-        <div class="video-card">
-            <h2>▶ Tutorial 03 - Editando pontos</h2>
-            <iframe src="https://www.youtube.com/embed/VIDEO3" allowfullscreen></iframe>
-            <p>Descrição do tutorial.</p>
-        </div>
-
-        <div class="video-card">
-            <h2>▶ Tutorial 04 - Otimizando rotas</h2>
-            <iframe src="https://www.youtube.com/embed/VIDEO4" allowfullscreen></iframe>
-            <p>Descrição do tutorial.</p>
-        </div>
-
-        <div class="video-card">
-            <h2>▶ Tutorial 05 - Exportação e compartilhamento</h2>
-            <iframe src="https://www.youtube.com/embed/VIDEO5" allowfullscreen></iframe>
-            <p>Descrição do tutorial.</p>
-        </div>
-
+    <!-- VISÃO GERAL -->
+    <div class="card">
+      <p class="lbl">Visão geral</p>
+      <p class="note">
+        O Otimizador de Roteiros geocodifica endereços e calcula a melhor ordem de visita para cada roteiro
+        entregue. Toda a base de roteiros fica no banco de dados: não é necessário importar ou anexar arquivos —
+        basta entrar com uma conta cadastrada para ter acesso aos roteiros liberados para o usuário.
+      </p>
     </div>
-    <script>
-        const themeBtn = document.getElementById("theme-toggle");
 
-        // Carrega preferência salva
-        if (localStorage.getItem("theme") === "light") {
-            document.body.classList.add("light");
-        }
+    <!-- SOBRE O PROGRAMA -->
+    <div class="card">
+      <p class="lbl">Sobre o programa</p>
+      <p class="note">
+        O Otimizador de Roteiros é uma aplicação web front-end (HTML, CSS e JavaScript), hospedada na
+        <strong>Vercel</strong>. A chave da API de geocodificação (Mapbox) fica protegida em uma função serverless
+        da própria Vercel, nunca exposta no navegador. O banco de dados, a autenticação de usuários e as
+        permissões de acesso são gerenciados pelo <strong>Supabase</strong>.
+      </p>
+      <p class="note note-spaced">
+        O código-fonte é aberto e distribuído sob a licença
+        <strong>GNU General Public License v3.0 (GPL-3.0)</strong> — consulte o texto completo em
+        <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">gnu.org/licenses/gpl-3.0</a>.
+      </p>
+      <p class="note note-spaced">
+        Código aberto não significa dados públicos: qualquer pessoa pode ler ou reaproveitar o código da
+        aplicação, mas os roteiros, endereços e demais dados armazenados no banco continuam privados, protegidos
+        por autenticação e por regras de acesso (RLS) configuradas no Supabase. Só usuários cadastrados e
+        autorizados conseguem ler ou gravar informações.
+      </p>
+    </div>
 
-        function updateThemeButton() {
+    <!-- ABAS -->
+    <div class="help-tabs">
+      <button class="help-tab active" id="tab-btn-guia" data-tab="guia">📘 Como funciona</button>
+      <button class="help-tab" id="tab-btn-legal" data-tab="legal">⚖️ Licença &amp; privacidade</button>
+    </div>
 
-            const light = document.body.classList.contains("light");
+    <div id="tab-guia" class="help-panel">
 
-            themeBtn.textContent = light
-                ? "☀️ Modo claro"
-                : "🌙 Modo escuro";
+    <!-- PASSO 1 — LOGIN -->
+    <div class="card">
+      <p class="lbl">1 — Login e carregamento automático</p>
+      <p class="note">
+        Ao abrir a aplicação, clique em <strong>🔐 Entrar</strong> e informe e-mail e senha cadastrados. Após a
+        autenticação, os roteiros disponíveis no banco de dados são carregados automaticamente e exibidos na tela
+        inicial — sem necessidade de upload manual de arquivos.
+      </p>
+      <p class="note note-spaced">
+        O acesso é restrito a usuários cadastrados. Caso não tenha uma conta, solicite o cadastro ao responsável
+        pelo sistema.
+      </p>
+      <div class="callout">
+        ⚠️ <strong>Acesso somente leitura:</strong> nem todo usuário cadastrado tem permissão de gravação no
+        banco. Se sua conta tiver apenas acesso de leitura, qualquer alteração feita (edição de pontos,
+        reordenação, exclusão) é salva <strong>somente no seu navegador (localmente)</strong> e some ao limpar os
+        dados do navegador — a aplicação avisa isso na tela sempre que isso acontece. Para que as alterações sejam
+        gravadas de fato no banco e fiquem disponíveis a outros usuários, é necessário ter permissão de escrita.
+      </div>
+    </div>
 
-            localStorage.setItem("theme", light ? "light" : "dark");
+    <!-- PASSO 2 — SELEÇÃO -->
+    <div class="card">
+      <p class="lbl">2 — Seleção do roteiro</p>
+      <p class="note">
+        Cada roteiro carregado aparece como um cartão na tela inicial, com o nome e a quantidade de pontos.
+        Clique em um cartão para abri-lo na área de processamento e trabalhar com seus pontos.
+      </p>
+    </div>
 
-            // Ajusta a transparência da barra
-            document.querySelector(".topbar").style.background = light
-                ? "rgba(245,246,243,.92)"
-                : "rgba(15,17,21,.90)";
-        }
+    <!-- PASSO 3 — GEOCODIFICAÇÃO E OTIMIZAÇÃO -->
+    <div class="card">
+      <p class="lbl">3 — Geocodificação e otimização</p>
+      <p class="note">
+        Com o roteiro selecionado, use <strong>⚡ Geocodificar e otimizar</strong> para converter os endereços em
+        coordenadas geográficas e calcular a ordem de visita mais eficiente entre os pontos, sempre partindo e
+        retornando ao endereço padrão configurado.
+      </p>
+      <p class="note note-spaced">
+        Ao final, a seção de <strong>Resultados</strong> mostra quantos endereços foram geocodificados com sucesso
+        e quantos não foram encontrados, permitindo correção manual quando necessário.
+      </p>
+    </div>
 
-        updateThemeButton();
+    <!-- PASSO 4 — EDIÇÃO MANUAL -->
+    <div class="card">
+      <p class="lbl">4 — Edição manual dos pontos</p>
+      <p class="note">
+        O botão <strong>✏️ Editar roteiro</strong> abre um painel onde é possível adicionar, remover ou corrigir
+        nome, endereço e coordenadas de cada ponto, além de travar pontos específicos para que não sejam
+        reordenados pela otimização automática.
+      </p>
+      <p class="note note-spaced">
+        Também é possível reordenar os pontos manualmente arrastando-os na lista, para ajustes finos após a
+        otimização automática.
+      </p>
+    </div>
 
-        themeBtn.addEventListener("click", () => {
-            document.body.classList.toggle("light");
-            updateThemeButton();
+    <!-- PASSO 5 — ROTEIRO PERSONALIZADO -->
+    <div class="card">
+      <p class="lbl">5 — Roteiro personalizado</p>
+      <p class="note">
+        O painel <strong>Roteiro Personalizado</strong> permite combinar pontos de diferentes roteiros já
+        carregados em uma nova rota avulsa: escolha o roteiro de origem, selecione os pontos desejados, ajuste a
+        ordem por arraste e gere um link ou QR Code específico para essa combinação.
+      </p>
+    </div>
+
+    <!-- PASSO 6 — COMPARTILHAMENTO -->
+    <div class="card">
+      <p class="lbl">6 — Link, QR Code e exportação</p>
+      <p class="note">
+        Depois de gerar a rota, use <strong>🗺️ Google Maps</strong> para abri-la diretamente ou
+        <strong>📋 Copiar link</strong> para compartilhar o endereço da rota. Um QR Code é gerado automaticamente
+        para abrir a rota em um celular sem precisar digitar nada.
+      </p>
+      <p class="note note-spaced">
+        O botão <strong>⬇️ Exportar tudo (KML)</strong> gera um arquivo KML com todos os pontos do roteiro, útil
+        para uso em outros aplicativos de mapas ou como backup.
+      </p>
+    </div>
+
+    <!-- SUPORTE -->
+    <div class="card">
+      <p class="lbl">Dúvidas</p>
+      <p class="note">
+        Em caso de dúvidas sobre acesso, permissões ou comportamento inesperado, entre em contato com o
+        responsável pela administração do banco de dados da aplicação.
+      </p>
+    </div>
+
+    </div><!-- /tab-guia -->
+
+    <div id="tab-legal" class="help-panel" hidden>
+
+      <div class="card">
+        <p class="lbl">Licença de código</p>
+        <p class="note">
+          Este projeto é distribuído sob a <strong>GNU General Public License v3.0 (GPL-3.0)</strong>. Isso
+          significa que o código-fonte pode ser livremente consultado, executado, estudado, modificado e
+          redistribuído, desde que qualquer trabalho derivado também seja disponibilizado sob a mesma licença.
+        </p>
+        <p class="note note-spaced">
+          Texto completo da licença:
+          <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">
+            gnu.org/licenses/gpl-3.0.html
+          </a>
+        </p>
+      </div>
+
+      <div class="card">
+        <p class="lbl">LGPD e privacidade dos dados</p>
+        <p class="note">
+          Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), os dados tratados por esta
+          aplicação — e-mail de login, endereços dos roteiros e coordenadas geográficas — são usados
+          exclusivamente para o funcionamento do serviço (autenticação e geocodificação/otimização de rotas).
+        </p>
+        <p class="note note-spaced">
+          Esses dados ficam armazenados no banco de dados do Supabase, protegidos por autenticação e por regras de
+          acesso por usuário (Row Level Security), e não são compartilhados com terceiros nem tornados públicos.
+          O fato de o código-fonte ser aberto não dá acesso ao conteúdo do banco de dados.
+        </p>
+        <p class="note note-spaced">
+          Para solicitar a exclusão de sua conta ou de dados pessoais associados a ela, entre em contato com o
+          responsável pela administração do sistema.
+        </p>
+      </div>
+
+      <div class="card">
+        <p class="lbl">Código-fonte</p>
+        <p class="note">
+          O repositório do projeto está disponível no GitHub, no perfil de
+          <strong>Nícolas Couto Chaves</strong>:
+        </p>
+        <p class="note note-spaced">
+          <a href="https://github.com/nicolascoutochaves" target="_blank" rel="noopener">
+            github.com/nicolascoutochaves
+          </a>
+        </p>
+      </div>
+
+    </div><!-- /tab-legal -->
+
+  </div><!-- /container -->
+
+  <script>
+    const themeBtn = document.getElementById("theme-toggle");
+
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light") {
+      document.body.classList.add("light");
+    }
+
+    function updateThemeButton() {
+      const light = document.body.classList.contains("light");
+      themeBtn.textContent = light ? "☀️ Modo claro" : "🌙 Modo escuro";
+      localStorage.setItem("theme", light ? "light" : "dark");
+    }
+
+    updateThemeButton();
+
+    themeBtn.addEventListener("click", () => {
+      document.body.classList.toggle("light");
+      updateThemeButton();
+    });
+
+    // Alterna entre as abas "Como funciona" e "Licença & privacidade"
+    const tabButtons = document.querySelectorAll(".help-tab");
+    const tabPanels = {
+      guia: document.getElementById("tab-guia"),
+      legal: document.getElementById("tab-legal"),
+    };
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        tabButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        Object.entries(tabPanels).forEach(([key, panel]) => {
+          panel.hidden = key !== btn.dataset.tab;
         });
+      });
+    });
 
-        if ("serviceWorker" in navigator) {
-            window.addEventListener("load", () => {
-                navigator.serviceWorker.register("./sw.js").catch((err) => {
-                    console.warn("Falha ao registrar service worker:", err);
-                });
-            });
-        }
-    </script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch((err) => {
+          console.warn("Falha ao registrar service worker:", err);
+        });
+      });
+    }
+  </script>
 </body>
 
 </html>
