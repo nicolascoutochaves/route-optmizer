@@ -1,0 +1,30 @@
+name: Keep Supabase Alive
+
+# Supabase free tier pausa o projeto após dias sem atividade no banco.
+# Isso aqui só faz uma leitura leve a cada 5 dias pra contar como "atividade".
+on:
+  schedule:
+    - cron: '0 12 */5 * *'   # todo dia divisível por 5 do mês, 12h UTC (09h em BRT)
+  workflow_dispatch: {}       # permite rodar manualmente em Actions > Run workflow
+
+jobs:
+  ping-supabase:
+    name: Ping Supabase REST
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar tabela leve no Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          http_status=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/authorized_users?select=user_id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+
+          echo "Supabase respondeu HTTP $http_status"
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "::error::Supabase não respondeu 2xx (status $http_status)"
+            exit 1
+          fi
