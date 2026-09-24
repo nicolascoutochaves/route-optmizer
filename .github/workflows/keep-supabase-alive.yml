@@ -2,28 +2,56 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: "0 12 */5 * *"
-  workflow_dispatch:
+    - cron: '17 3 * * *'   # todo dia às 03:17 UTC — minuto fora da hora cheia de propósito
+  workflow_dispatch: {}
 
 jobs:
   ping-supabase:
     name: Ping Supabase REST
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     steps:
-      - name: Ping Supabase REST (root endpoint)
+      - name: Pingar Supabase com retry e backoff
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "$SUPABASE_URL/rest/v1/" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          set -uo pipefail
 
-          echo "Supabase respondeu HTTP $http_status"
+          # Troque para uma tabela real caso não queira criar a keepalive_ping
+          TABLE_NAME="keepalive_ping"
+          ENDPOINT="$SUPABASE_URL/rest/v1/$TABLE_NAME?select=id&limit=1"
 
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
-            echo "::error::Supabase não respondeu 2xx (status $http_status)"
-            exit 1
-          fi
+          DELAYS=(0 60 120 300 600)
+          MAX_ATTEMPTS=${#DELAYS[@]}
+
+          for i in "${!DELAYS[@]}"; do
+            attempt=$((i + 1))
+
+            if [ "${DELAYS[$i]}" -gt 0 ]; then
+              echo "Aguardando ${DELAYS[$i]}s antes da tentativa $attempt..."
+              sleep "${DELAYS[$i]}"
+            fi
+
+            echo "Tentativa $attempt/$MAX_ATTEMPTS..."
+
+            http_status=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 10 \
+              --max-time 20 \
+              "$ENDPOINT" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+            curl_exit=$?
+
+            if [ "$curl_exit" -ne 0 ] || [ -z "$http_status" ] || ! [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
+              echo "Falha de conexão (curl exit $curl_exit, resposta: '${http_status:-vazia}') — DNS, timeout ou rede."
+            elif [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+              echo "HTTP $http_status — Supabase respondeu com sucesso na tentativa $attempt."
+              exit 0
+            else
+              echo "HTTP $http_status — tentativa $attempt falhou."
+            fi
+          done
+
+          echo "::error::Todas as $MAX_ATTEMPTS tentativas falharam. Supabase pode estar indisponível ou a configuração precisa de revisão."
+          exit 1
