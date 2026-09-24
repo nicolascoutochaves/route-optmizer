@@ -20,7 +20,7 @@ jobs:
 
           # Troque para uma tabela real caso não queira criar a keepalive_ping
           TABLE_NAME="keepalive_ping"
-          ENDPOINT="$SUPABASE_URL/rest/v1/$TABLE_NAME?select=id&limit=1"
+          ENDPOINT="$SUPABASE_URL$TABLE_NAME?select=id&limit=1"
 
           DELAYS=(0 60 120 300 600)
           MAX_ATTEMPTS=${#DELAYS[@]}
