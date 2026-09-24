@@ -1,16 +1,17 @@
-      - name: Ping Supabase REST (root endpoint)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: |
-          http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "$SUPABASE_URL/rest/v1/" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+steps:
+  - name: Ping Supabase REST (root endpoint)
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    run: |
+      http_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        "$SUPABASE_URL/rest/v1/" \
+        -H "apikey: $SUPABASE_ANON_KEY" \
+        -H "Authorization: Bearer $SUPABASE_ANON_KEY")
 
-          echo "Supabase respondeu HTTP $http_status"
+      echo "Supabase respondeu HTTP $http_status"
 
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
-            echo "::error::Supabase não respondeu 2xx (status $http_status)"
-            exit 1
-          fi
+      if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+        echo "::error::Supabase não respondeu 2xx (status $http_status)"
+        exit 1
+      fi
